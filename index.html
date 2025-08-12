@@ -3,168 +3,289 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Route Stats — Supabase MVP</title>
+<title>Route Stats — Dashboard MVP</title>
 <style>
-  :root { --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#a6abb5; --brand:#2b7fff; }
-  *{box-sizing:border-box}
+  :root{
+    --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#a6abb5; --brand:#2b7fff; --good:#88f0a7; --bad:#ff9aa8; --warn:#ffd08a;
+  }
+  [data-theme="sunrise"]{ --bg:#fff7f0; --card:#fff; --border:#e7d9cc; --text:#222; --muted:#7a6d61; --brand:#ff6a3d; --good:#1a8735; --bad:#b21634; --warn:#b26f00; }
   body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Inter,Segoe UI,Roboto,Arial,sans-serif}
-  header{border-bottom:1px solid var(--border);padding:16px 20px}
-  .wrap{max-width:980px;margin:0 auto;padding:16px}
-  h1{margin:0;font-size:22px;letter-spacing:.2px}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin:14px 0}
+  header{border-bottom:1px solid var(--border);padding:14px 16px}
+  .wrap{max-width:1080px;margin:0 auto;padding:16px}
+  h1{margin:0;font-size:20px;letter-spacing:.2px}
   .grid{display:grid;gap:12px}
-  @media(min-width:900px){.grid-2{grid-template-columns:1.1fr .9fr}}
+  @media(min-width:960px){.grid-2{grid-template-columns:1.1fr .9fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
   label{font-size:13px;color:var(--muted)}
-  input,select,textarea{width:100%;padding:12px;background:#0f131c;border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:15px}
+  input,select,textarea{width:100%;padding:12px;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:15px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   button{background:var(--brand);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
-  button.ghost{background:#202633;color:var(--text)}
+  button.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
   small{color:var(--muted)}
   table{width:100%;border-collapse:collapse}
   th,td{border-bottom:1px solid var(--border);padding:8px 6px;text-align:left}
   th{color:var(--muted);font-weight:600}
   .right{text-align:right}
-  .hidden{display:none}
+  .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);padding:8px 10px;border-radius:999px;background:transparent}
+  .stat{display:flex;flex-direction:column;gap:4px;padding:10px;border:1px solid var(--border);border-radius:12px}
+  .up{color:var(--good)} .down{color:var(--bad)} .warn{color:var(--warn)}
+  canvas{background:transparent;border:1px solid var(--border);border-radius:10px;padding:8px}
+  /* FAB */
+  .fab{position:fixed;right:16px;bottom:16px;z-index:10}
 </style>
 </head>
 <body>
-<header><div class="wrap"><h1>📈 Route Stats — Supabase MVP</h1></div></header>
+<header>
+  <div class="wrap row" style="justify-content:space-between">
+    <h1>📈 Route Stats — Dashboard</h1>
+    <div class="row">
+      <select id="themeSel" class="ghost"><option value="midnight">Midnight</option><option value="sunrise">Sunrise</option></select>
+      <button id="signOut" class="ghost">Sign out</button>
+    </div>
+  </div>
+</header>
 <main class="wrap grid grid-2">
-  <section class="card" id="authCard">
-    <h3 style="margin:0 0 10px 0">Sign in</h3>
-    <div class="grid" style="grid-template-columns:1fr auto">
+  <!-- SNAPSHOT -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
       <div>
-        <label>Email</label>
-        <input id="email" type="email" placeholder="you@example.com" />
+        <div class="row" style="gap:8px;align-items:baseline">
+          <div class="stat"><small>Expected End</small><strong id="expEnd" style="font-size:20px">—</strong><small id="expMeta" style="color:var(--muted)">Mon avg —</small></div>
+          <div class="stat"><small>Expected Parcels</small><strong id="expParcels" style="font-size:20px">—</strong><small id="expParcelsMeta" style="color:var(--muted)">vs wk</small></div>
+        </div>
       </div>
-      <div class="row" style="align-self:end">
-        <button id="magic">Send magic link</button>
+      <div class="row" style="gap:8px;align-items:stretch">
+        <div class="stat"><small>Hours (wk)</small><div><strong id="wkHours">—</strong> <span id="wkHoursDelta" class="pill">—</span></div></div>
+        <div class="stat"><small>Volume (wk)</small><div><strong id="wkVol">—</strong> <span id="wkVolDelta" class="pill">—</span></div></div>
       </div>
-      <small style="grid-column:1/-1;color:var(--muted)">You’ll receive an email link. Open it on this device to stay signed in.</small>
     </div>
   </section>
 
-  <section class="card hidden" id="appCard">
-    <h3 style="margin:0 0 10px 0">Add Daily Entry</h3>
+  <!-- FORM -->
+  <section class="card">
+    <h3 style="margin:0 0 8px 0">Add Entry</h3>
     <div class="grid" style="grid-template-columns:repeat(2,1fr);gap:10px">
       <div><label>Date</label><input id="date" type="date"></div>
-      <div><label>Route (optional)</label><input id="route" type="text" placeholder="Primary / Aux / Amazon…"></div>
-      <div><label>Start Time</label><input id="start" type="time" value="08:00"><small>Prefills 08:00 — change if needed.</small></div>
+      <div><label>Route</label><input id="route" type="text" placeholder="Primary / Aux / Amazon…"></div>
+      <div><label>Start Time</label><input id="start" type="time" value="08:00"></div>
       <div><label>End Time</label><input id="end" type="time" placeholder="--:--"></div>
       <div><label>Parcels</label><input id="parcels" type="number" min="0" value="0"></div>
       <div><label>Letters</label><input id="letters" type="number" min="0" value="0"></div>
       <div><label>Flats</label><input id="flats" type="number" min="0" value="0"></div>
       <div><label>Miles</label><input id="miles" type="number" step="0.1" min="0" value="0"></div>
       <div><label>Weather (notes)</label><input id="weather" type="text" placeholder="Sunny 72°, light wind"></div>
-      <div><label>Mood</label>
-        <select id="mood"><option value="">—</option><option>🔥 dialed in</option><option>🙂 good</option><option>😐 meh</option><option>🥵 cooked</option><option>🌧️ soggy</option></select>
-      </div>
+      <div><label>Mood</label><select id="mood"><option value="">—</option><option>🔥 dialed in</option><option>🙂 good</option><option>😐 meh</option><option>🥵 cooked</option><option>🌧️ soggy</option><option>🛑 off</option></select></div>
       <div style="grid-column:1/-1"><label>Notes</label><textarea id="notes" rows="2" placeholder="Anything notable…"></textarea></div>
       <div class="row" style="grid-column:1/-1;justify-content:space-between">
-        <div class="row"><small>Total hours (auto): </small><strong id="hoursPreview">—</strong></div>
-        <div class="row"><button id="save">Save entry</button><button id="signOut" class="ghost">Sign out</button></div>
+        <div class="row">
+          <label class="pill"><input id="offDay" type="checkbox"> Off day</label>
+          <span class="pill"><small>Total hours:</small> <strong id="hoursPreview">—</strong></span>
+        </div>
+        <div class="row">
+          <button id="save">Save</button>
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="card hidden" id="listCard">
-    <h3 style="margin:0 0 10px 0">Recent Entries</h3>
-    <div class="row" style="justify-content:space-between"><div></div><button id="refresh" class="ghost">Refresh</button></div>
-    <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px">
+  <!-- CHARTS -->
+  <section class="card">
+    <h3 style="margin:0 0 8px 0">Averages by Day of Week</h3>
+    <canvas id="dowChart" height="180"></canvas>
+  </section>
+
+  <section class="card">
+    <h3 style="margin:0 0 8px 0">Parcels Over Time</h3>
+    <canvas id="parcelsChart" height="180"></canvas>
+  </section>
+
+  <!-- TABLE -->
+  <section class="card" style="grid-column:1/-1">
+    <div class="row" style="justify-content:space-between"><h3 style="margin:0">Recent Entries</h3><button id="exportCsv" class="ghost">Export CSV</button></div>
+    <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:10px">
       <table id="tbl"><thead><tr>
-        <th>Date</th><th>Route</th><th class="right">Hours</th><th class="right">Parcels</th><th class="right">Letters</th><th class="right">Flats</th><th class="right">Miles</th>
+        <th>Date</th><th>Route</th><th>Status</th><th class="right">Hours</th><th class="right">Parcels</th><th class="right">Letters</th><th class="right">Flats</th><th class="right">Miles</th>
       </tr></thead><tbody></tbody></table>
     </div>
   </section>
 </main>
 
+<button class="fab" id="fab">+ Add Entry</button>
+
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script type="module">
-  // 1) Fill these with your Supabase values (Settings → API)
-  const SUPABASE_URL = 'https://ouwkdtiixkaydrtfdhnh.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91d2tkdGlpeGtheWRydGZkaG5oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUwMDc0NDksImV4cCI6MjA3MDU4MzQ0OX0.KI-dYG5_A8jvPEHSog3wlnLbIGYIHQR_4ztXHL2SzIg';
+  // ==== EDIT THESE WITH YOUR PROJECT VALUES ====
+  const SUPABASE_URL = 'https://YOUR-PROJECT-REF.supabase.co';
+  const SUPABASE_ANON = 'YOUR_ANON_PUBLIC_KEY';
+  // ============================================
 
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true } });
+  const $ = id => document.getElementById(id);
+  const DateTime = luxon.DateTime;
 
-  // --- elements
-  const $ = (id)=>document.getElementById(id);
-  const authCard = $('authCard'), appCard = $('appCard'), listCard = $('listCard');
-  const email = $('email'), magic = $('magic');
-  const date = $('date'), route = $('route'), start = $('start'), end = $('end'), parcels = $('parcels'), letters = $('letters'), flats = $('flats'), miles = $('miles'), weather = $('weather'), mood = $('mood'), notes = $('notes'), hoursPreview = $('hoursPreview');
-  const saveBtn = $('save'), signOutBtn = $('signOut'), refreshBtn = $('refresh');
+  // THEME
+  const themeSel = $('themeSel');
+  themeSel.value = localStorage.getItem('rs.theme')||'midnight';
+  document.documentElement.dataset.theme = themeSel.value;
+  themeSel.addEventListener('change',()=>{ document.documentElement.dataset.theme = themeSel.value; localStorage.setItem('rs.theme', themeSel.value); });
 
-  // --- auth UI
-  magic.addEventListener('click', async ()=>{
-    if (!email.value) return alert('Enter your email');
-    const { error } = await supabase.auth.signInWithOtp({ email: email.value, options: { emailRedirectTo: window.location.href } });
-    if (error) alert(error.message); else alert('Magic link sent! Check your email.');
-  });
+  // ELEMENTS
+  const date = $('date'), route = $('route'), start = $('start'), end = $('end'), parcels = $('parcels'), letters = $('letters'), flats = $('flats'), miles = $('miles'), weather = $('weather'), mood = $('mood'), notes = $('notes'), hoursPreview = $('hoursPreview'), offDay = $('offDay');
+  const exportBtn = $('exportCsv'), signOutBtn = $('signOut');
+  const expEnd = $('expEnd'), expMeta = $('expMeta'), expParcels = $('expParcels'), expParcelsMeta = $('expParcelsMeta'), wkHours = $('wkHours'), wkHoursDelta = $('wkHoursDelta'), wkVol = $('wkVol'), wkVolDelta = $('wkVolDelta');
 
-  signOutBtn.addEventListener('click', async ()=>{
-    await supabase.auth.signOut();
-    authCard.classList.remove('hidden'); appCard.classList.add('hidden'); listCard.classList.add('hidden');
-  });
+  // DEFAULTS
+  function todayStr(){ return DateTime.now().toISODate(); }
+  date.value = todayStr();
 
-  // --- session boot
-  supabase.auth.onAuthStateChange((_evt, session)=>{
-    if (session?.user) { onAuthed(session.user); } else { authCard.classList.remove('hidden'); }
-  });
-  (async ()=>{ const { data: { session } } = await supabase.auth.getSession(); if (session?.user) onAuthed(session.user); else authCard.classList.remove('hidden'); })();
-
-  function todayStr(){ return new Date().toISOString().slice(0,10); }
   function computeHours(){
+    if (offDay.checked) { hoursPreview.textContent='0.00'; return 0; }
     if (!start.value || !end.value) { hoursPreview.textContent='—'; return null; }
-    const s = new Date(`${date.value}T${start.value}`); const e = new Date(`${date.value}T${end.value}`);
-    let h = (e - s)/3600000; if (h<0) h+=24; const val = Math.round(h*100)/100; hoursPreview.textContent = val.toFixed(2); return val;
+    const s = DateTime.fromISO(`${date.value}T${start.value}`); const e = DateTime.fromISO(`${date.value}T${end.value}`);
+    let h = (e.toMillis()-s.toMillis())/3600000; if (h < 0) h += 24; const val = Math.round(h*100)/100; hoursPreview.textContent = val.toFixed(2); return val;
   }
-  start.addEventListener('input', computeHours); end.addEventListener('input', computeHours);
+  [start,end,date,offDay].forEach(el=>el.addEventListener('input', computeHours));
+  offDay.addEventListener('change',()=>{ if (offDay.checked){ end.value=''; parcels.value=letters.value=flats.value=miles.value=0; mood.value='🛑 off'; } });
 
-  async function onAuthed(user){
-    authCard.classList.add('hidden'); appCard.classList.remove('hidden'); listCard.classList.remove('hidden');
-    date.value = todayStr();
-    await refresh();
-  }
+  // AUTH helper (anonymous magic link-less demo). If you already wired magic links, you can keep using them.
+  async function getUID(){ const { data:{ user } } = await sb.auth.getUser(); if (user) return user.id; const { data:{ session } } = await sb.auth.signInAnonymously(); return session.user.id; }
 
-  // --- save entry (INSERT)
-  saveBtn.addEventListener('click', async ()=>{
-    const hours = computeHours();
+  // SAVE
+  $('save').addEventListener('click', async ()=>{
+    const uid = await getUID();
     const payload = {
-      user_id: (await supabase.auth.getUser()).data.user.id,
+      user_id: uid,
       work_date: date.value,
       route: route.value || null,
-      start_time: start.value || null,
-      end_time: end.value || null,
-      hours: hours,
-      parcels: +parcels.value || 0,
-      letters: +letters.value || 0,
-      flats: +flats.value || 0,
-      miles: +miles.value || 0,
+      start_time: offDay.checked ? null : (start.value||null),
+      end_time: offDay.checked ? null : (end.value||null),
+      hours: offDay.checked ? 0 : computeHours(),
+      parcels: offDay.checked ? 0 : (+parcels.value||0),
+      letters: offDay.checked ? 0 : (+letters.value||0),
+      flats: offDay.checked ? 0 : (+flats.value||0),
+      miles: offDay.checked ? 0 : (+miles.value||0),
       weather_json: weather.value ? { note: weather.value } : null,
-      mood: mood.value || null,
-      notes: notes.value || null
+      mood: mood.value || (offDay.checked ? '🛑 off' : null),
+      notes: notes.value || null,
+      status: offDay.checked ? 'off' : 'worked'
     };
-
-    const { error } = await supabase.from('entries').insert(payload);
+    const { error } = await sb.from('entries').insert(payload);
     if (error) { alert(error.message); return; }
-    alert('Saved');
-    end.value=''; hoursPreview.textContent='—'; notes.value = weather.value = ''; parcels.value=letters.value=flats.value=miles.value=0; route.value='';
-    await refresh();
+    clearForm();
   });
 
-  // --- list entries (SELECT)
-  async function refresh(){
-    const uid = (await supabase.auth.getUser()).data.user.id;
-    const { data, error } = await supabase.from('entries').select('*').eq('user_id', uid).order('work_date', { ascending:false }).limit(50);
-    if (error) { console.error(error); return; }
+  function clearForm(){ end.value=''; parcels.value=letters.value=flats.value=miles.value=0; weather.value=''; notes.value=''; offDay.checked=false; hoursPreview.textContent='—'; }
+
+  // TABLE
+  async function fetchEntries(){
+    const uid = await getUID();
+    const { data, error } = await sb.from('entries').select('*').eq('user_id', uid).order('work_date', { ascending:false }).limit(200);
+    if (error) { console.error(error); return []; }
+    return data;
+  }
+
+  function renderTable(rows){
     const tbody = document.querySelector('#tbl tbody');
-    tbody.innerHTML = '';
-    for (const r of data){
+    tbody.innerHTML='';
+    for (const r of rows.slice(0,80)){
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${r.work_date}</td><td>${r.route||''}</td><td class="right">${r.hours?.toFixed? r.hours.toFixed(2): (r.hours??'')}</td><td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.flats||0}</td><td class="right">${r.miles||0}</td>`;
+      tr.innerHTML = `<td>${r.work_date}</td><td>${r.route||''}</td><td>${r.status||'worked'}</td><td class="right">${r.hours?.toFixed? r.hours.toFixed(2): (r.hours??'')}</td><td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.flats||0}</td><td class="right">${r.miles||0}</td>`;
       tbody.appendChild(tr);
     }
   }
-  refreshBtn.addEventListener('click', refresh);
+
+  // CSV
+  $('exportCsv').addEventListener('click', async ()=>{
+    const rows = await fetchEntries();
+    const headers = ['work_date','route','status','start_time','end_time','hours','parcels','letters','flats','miles','mood','notes','created_at'];
+    const lines = [headers.join(',')];
+    for (const r of rows){
+      const vals = headers.map(h=>{
+        const v = r[h]; if (v==null) return ''; const s = String(v).replace(/"/g,'""'); return /[",\n]/.test(s)? `"${s}"` : s;
+      });
+      lines.push(vals.join(','));
+    }
+    const blob = new Blob([lines.join('\n')],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='route-stats.csv'; a.click();
+  });
+
+  // CHARTS
+  let dowChart, parcelsChart;
+  function destroyCharts(){ [dowChart, parcelsChart].forEach(c=>c&&c.destroy()); }
+
+  function buildCharts(rows){
+    destroyCharts();
+    const DateX = rows.filter(r=>r.status!=='off');
+    // DOW Avg Hours (rolling)
+    const byDow = Array.from({length:7},()=>({h:0,c:0}));
+    for (const r of DateX){ if(r.hours!=null){ const dow = (new Date(r.work_date).getDay()); byDow[dow].h += Number(r.hours); byDow[dow].c++; } }
+    const dowLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dowData = byDow.map(x=> x.c? +(x.h/x.c).toFixed(2): 0);
+    dowChart = new Chart(document.getElementById('dowChart'), { type:'bar', data:{ labels:dowLabels, datasets:[{label:'Avg Hours', data:dowData}] }, options:{responsive:true,plugins:{legend:{display:false}}} });
+
+    // Parcels over time
+    const sorted = [...rows].sort((a,b)=> a.work_date.localeCompare(b.work_date));
+    parcelsChart = new Chart(document.getElementById('parcelsChart'), { type:'line', data:{ labels:sorted.map(r=>r.work_date), datasets:[{label:'Parcels', data:sorted.map(r=>r.parcels||0)}] }, options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}} });
+  }
+
+  // SNAPSHOT
+  function pct(a,b){ if(b===0||b==null) return null; return ((a-b)/b)*100; }
+  function hhmmFromHours(baseDateStr, hours){ if(hours==null) return '—'; const d = DateTime.fromISO(baseDateStr).set({ hour:8, minute:0 }); const end = d.plus({ hours }); return end.toFormat('h:mm a'); }
+
+  function buildSnapshot(rows){
+    const today = DateTime.now(); const dow = today.weekday % 7; // Sun=0
+    const rowsW = rows.filter(r=>r.status!=='off');
+
+    const hoursByDow = Array.from({length:7},()=>[]);
+    const parcelsByDow = Array.from({length:7},()=>[]);
+    for (const r of rowsW){ const d = DateTime.fromISO(r.work_date).weekday % 7; if(r.hours!=null) hoursByDow[d].push(Number(r.hours)); parcelsByDow[d].push(Number(r.parcels||0)); }
+
+    const avg = arr => arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+    const dowAvgHrs = hoursByDow.map(avg); const dowAvgParcels = parcelsByDow.map(avg);
+    const todayExpHrs = dowAvgHrs[dow]; const todayExpParcels = dowAvgParcels[dow];
+
+    expEnd.textContent = todayExpHrs? hhmmFromHours(today.toISODate(), todayExpHrs) : '—';
+    expMeta.textContent = `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} avg ${todayExpHrs? todayExpHrs.toFixed(2)+'h':'—'}`;
+    expParcels.textContent = todayExpParcels? Math.round(todayExpParcels) : '—';
+
+    // Week-over-week deltas
+    const startOfWeek = today.startOf('week'); const lastWeekStart = startOfWeek.minus({ weeks:1 }); const lastWeekEnd = startOfWeek.minus({ days:1 });
+    const thisWeek = rowsW.filter(r=> DateTime.fromISO(r.work_date) >= startOfWeek);
+    const lastWeek = rowsW.filter(r=> DateTime.fromISO(r.work_date) >= lastWeekStart && DateTime.fromISO(r.work_date) <= lastWeekEnd);
+
+    const sum = (a,fn)=> a.reduce((t,x)=> t + (fn(x)||0),0);
+    const hThis = sum(thisWeek, r=>r.hours); const hLast = sum(lastWeek, r=>r.hours);
+    const vThis = sum(thisWeek, r=> (r.parcels||0)+(r.letters||0)+(r.flats||0));
+    const vLast = sum(lastWeek, r=> (r.parcels||0)+(r.letters||0)+(r.flats||0));
+
+    wkHours.textContent = hThis.toFixed(2); wkVol.textContent = vThis;
+    const dh = pct(hThis, hLast); const dv = pct(vThis, vLast);
+    const fmt = p => p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
+    wkHoursDelta.textContent = fmt(dh); wkVolDelta.textContent = fmt(dv);
+    wkHoursDelta.className = 'pill ' + (dh==null? '' : dh>=0? 'up' : 'down');
+    wkVolDelta.className = 'pill ' + (dv==null? '' : dv>=0? 'up' : 'down');
+    expParcelsMeta.textContent = dv==null? '—' : (dv>=0? '↑ vs wk' : '↓ vs wk');
+  }
+
+  // REALTIME (auto-refresh)
+  async function initRealtime(){
+    const uid = await getUID();
+    sb.channel('entries-watch')
+      .on('postgres_changes', { event:'*', schema:'public', table:'entries', filter:`user_id=eq.${uid}` }, async ()=>{ const rows = await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); })
+      .subscribe();
+  }
+
+  // FAB
+  $('fab').addEventListener('click',()=>{ window.scrollTo({ top:0, behavior:'smooth' }); $('start').focus(); });
+  signOutBtn.addEventListener('click', ()=> sb.auth.signOut().then(()=>location.reload()));
+
+  // BOOT
+  (async()=>{
+    date.value = todayStr();
+    const rows = await fetchEntries();
+    renderTable(rows); buildCharts(rows); buildSnapshot(rows); initRealtime();
+  })();
 </script>
 </body>
 </html>
