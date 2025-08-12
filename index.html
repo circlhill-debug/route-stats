@@ -92,10 +92,7 @@
       <div class="row" style="grid-column:1/-1;justify-content:space-between;align-items:center">
         <label class="pill"><input id="offDay" type="checkbox"> Off day</label>
         <div class="row"><span class="pill"><small>Office:</small> <b id="officeH">—</b></span><span class="pill"><small>Route:</small> <b id="routeH">—</b></span><span class="pill"><small>Total:</small> <b id="totalH">—</b></span></div>
-        <div class="row">
-  <button id="save">Save</button>
-  <button id="delete" class="ghost">Delete</button>
- </div>
+        <div class="row"><button id="save">Save</button></div>
       </div>
     </div>
   </section>
@@ -314,42 +311,6 @@
     });
   })();
   /* ===== End edit-by-date ===== */
-  /* ===== Delete entry by date ===== */
-(function wireDelete(){
-  const del = document.getElementById('delete');
-  if (!del) return;
-
-  del.addEventListener('click', async ()=>{
-    if (!editingKey) {
-      alert('Pick a date that already has an entry (or let it prefill) before deleting.');
-      return;
-    }
-    if (!confirm(`Delete entry for ${editingKey.work_date}?`)) return;
-
-    const { error } = await sb
-      .from('entries')
-      .delete()
-      .eq('user_id', editingKey.user_id)
-      .eq('work_date', editingKey.work_date);
-
-    dWrite.textContent = error ? 'Failed' : 'OK';
-    if (error) { alert(error.message); return; }
-
-    // Clear form + reset state
-    route.value=''; start.value='08:00'; end.value='';
-    departTime.value=''; returnTime.value='';
-    parcels.value=0; letters.value=0; miles.value=0;
-    mood.value=''; notes.value=''; offDay.checked=false;
-    editingKey = null;
-    document.getElementById('save').textContent='Save';
-    document.getElementById('save').classList.remove('ghost');
-    try { computeBreakdown(); } catch(_) {}
-
-    // Refresh UI
-    const rows = await fetchEntries();
-    renderTable(rows); buildCharts(rows); buildSnapshot(rows);
-  });
-})();
 
   // Fetch & render
   async function fetchEntries(){
