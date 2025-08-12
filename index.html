@@ -199,37 +199,140 @@
   }
   ;[date,start,departTime,returnTime,end,parcels,letters,miles,offDay].forEach(el=> el.addEventListener('input', computeBreakdown));
 
-  // Save
-  $('save').addEventListener('click', async ()=>{
-    const { data:{ user } } = await sb.auth.getUser(); dAuth.textContent = user? 'Session' : 'No session';
-    const d=date.value; const s=start.value||'08:00'; const off=diffHours(d,s,departTime.value); const rte=diffHours(d,departTime.value,end.value); const tot=offDay.checked?0:((off??0)+(rte??0));
-    const payload={
-      user_id:user?.id,
-      work_date:d,
-      route:route.value||null,
-      start_time: offDay.checked ? null : (s||null),
-      end_time:   offDay.checked ? null : (end.value||null),
-      hours:      offDay.checked ? 0 : (tot||null),
-      parcels:    offDay.checked ? 0 : (+parcels.value||0),
-      letters:    offDay.checked ? 0 : (+letters.value||0),
-      miles:      offDay.checked ? 0 : (+miles.value||0),
-      mood:       offDay.checked ? '🛑 off' : (mood.value||null),
-      notes:      notes.value||null,
-      status:     offDay.checked ? 'off' : 'worked',
-      office_start: s||null,
-      depart_time:  departTime.value||null,
-      return_time:  returnTime.value||null,
-      office_minutes: off!=null? (off).toFixed(2) : null,
-      route_minutes:  rte!=null? (rte).toFixed(2) : null,
-      weather_json: null
-    };
-    const { error } = await sb.from('entries').insert(payload);
-    dWrite.textContent = error? 'Failed' : 'OK';
-    if(error){ alert(error.message); return; }
-    // light reset
-    parcels.value=letters.value=miles.value=0; notes.value=''; offDay.checked=false; // keep times
-    const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows);
+ <!-- ===== Edit-by-Date (prefill + update) ===== -->
+<script>
+// collect current form into a DB payload (same shape you already use)
+function collectPayload(userId){
+  const d = date.value;
+  const s = start.value || '08:00';
+
+  const diff = (t1,t2)=> {
+    if(!t1 || !t2) return null;
+    const a = DateTime.fromISO(`${d}T${t1}`);
+    const b = DateTime.fromISO(`${d}T${t2}`);
+    let h = (b.toMillis()-a.toMillis())/3.6e6;
+    if (h < 0) h += 24;
+    return Math.round(h*100)/100;
+  };
+
+  const off = diff(s, departTime.value);
+  const rte = diff(departTime.value, end.value);
+  const tot = offDay.checked ? 0 : ((off??0)+(rte??0));
+
+  return {
+    user_id:        userId,
+    work_date:      d,
+    route:          route.value || null,
+    start_time:     offDay.checked ? null : (s || null),
+    end_time:       offDay.checked ? null : (end.value || null),
+    hours:          offDay.checked ? 0 : (tot || null),
+    parcels:        offDay.checked ? 0 : (+parcels.value||0),
+    letters:        offDay.checked ? 0 : (+letters.value||0),
+    miles:          offDay.checked ? 0 : (+miles.value||0),
+    mood:           offDay.checked ? '🛑 off' : (mood.value||null),
+    notes:          notes.value || null,
+    status:         offDay.checked ? 'off' : 'worked',
+    office_start:   s || null,
+    depart_time:    departTime.value || null,
+    return_time:    returnTime.value || null,
+    office_minutes: off!=null ? off.toFixed(2) : null,
+    route_minutes:  rte!=null ? rte.toFixed(2) : null,
+    weather_json:   null
+  };
+}
+
+function fillForm(r){
+  route.value       = r.route || '';
+  start.value       = r.start_time || '08:00';
+  end.value         = r.end_time   || '';
+  departTime.value  = r.depart_time || '';
+  returnTime.value  = r.return_time || '';
+  parcels.value     = r.parcels || 0;
+  letters.value     = r.letters || 0;
+  miles.value       = r.miles   || 0;
+  mood.value        = r.mood    || '';
+  notes.value       = r.notes   || '';
+  offDay.checked    = (r.status === 'off');
+  try { computeBreakdown(); } catch(_) {}
+}
+
+let editingKey = null; // { user_id, work_date } when we’re editing
+
+async function loadByDate(){
+  editingKey = null;
+  const { data:{ user } } = await sb.auth.getUser();
+  if (!user) return;
+  const d = date.value;
+  if (!d) return;
+
+  const { data, error } = await sb
+    .from('entries')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('work_date', d)
+    .limit(1)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') { // ignore “no rows”
+    console.error(error);
+    return;
+  }
+
+  const saveBtn = document.getElementById('save');
+  if (data) {
+    // EDIT mode
+    editingKey = { user_id: user.id, work_date: d };
+    fillForm(data);
+    saveBtn.textContent = 'Update';
+    saveBtn.classList.add('ghost');
+  } else {
+    // CREATE mode
+    saveBtn.textContent = 'Save';
+    saveBtn.classList.remove('ghost');
+  }
+}
+
+// Hook date change + run once at boot (we’ll also call it in your boot block below)
+date.addEventListener('change', loadByDate);
+
+// Insert-or-Update (UPSERT-ish) handler
+(function replaceSave(){
+  const btn = document.getElementById('save');
+  const clone = btn.cloneNode(true);
+  btn.parentNode.replaceChild(clone, btn);
+
+  clone.addEventListener('click', async ()=>{
+    const { data:{ user } } = await sb.auth.getUser();
+    if (!user) { alert('No session. Try Link devices or refresh.'); return; }
+
+    const payload = collectPayload(user.id);
+    let error;
+
+    if (editingKey) {
+      // UPDATE existing row for that day
+      ({ error } = await sb.from('entries')
+        .update(payload)
+        .eq('user_id', editingKey.user_id)
+        .eq('work_date', editingKey.work_date));
+    } else {
+      // INSERT new row
+      ({ error } = await sb.from('entries').insert(payload));
+    }
+
+    dWrite.textContent = error ? 'Failed' : 'OK';
+    if (error) { alert(error.message); return; }
+
+    const rows = await fetchEntries();
+    renderTable(rows); buildCharts(rows); buildSnapshot(rows);
+
+    // stay in edit mode for the chosen date
+    editingKey = { user_id: user.id, work_date: date.value };
+    clone.textContent = 'Update';
+    clone.classList.add('ghost');
   });
+})();
+</script>
+<!-- ===== End Edit-by-Date ===== -->
 
   // Fetch & render
   async function fetchEntries(){
@@ -317,7 +420,8 @@
   $('fab').addEventListener('click',()=>{ window.scrollTo({ top:0, behavior:'smooth' }); $('departTime').focus(); });
 
   // Boot
-  (async()=>{ $('date').value=todayStr(); const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown(); })();
-</script>
+  (async()=>{ $('date').value=todayStr();  await loadByDate(); const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown(); })();
+
+  </script>
 </body>
 </html>
