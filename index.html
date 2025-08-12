@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Route Stats — Live Dashboard</title>
-<!-- Anonymous by default + optional Magic Link sync. Exact time split. Colors & snapshots. No Flats. -->
 <style>
   :root{ --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#9aa0aa; --brand:#2b7fff; --good:#7CE38B; --warn:#FFD27A; --bad:#FF8FA1 }
   *{box-sizing:border-box}
@@ -31,7 +30,6 @@
   .fab{ position:fixed; right:16px; bottom:16px; z-index:10 }
   #diag{ position:sticky; top:0; z-index:999; background:#111; color:#ddd; font:12px/1.35 system-ui; padding:6px 10px; border-bottom:1px solid #222 }
   #diag b{ color:#fff }
-  /* row coloring */
   tr.light td{ background:linear-gradient(90deg, rgba(124,227,139,.07), transparent) }
   tr.heavy td{ background:linear-gradient(90deg, rgba(255,143,161,.10), transparent) }
   tr.typical td{ background:linear-gradient(90deg, rgba(255,210,122,.08), transparent) }
@@ -50,6 +48,7 @@
     </div>
   </div>
 </header>
+
 <main class="wrap grid grid-2">
   <!-- SNAPSHOT -->
   <section class="card">
@@ -68,7 +67,6 @@
   <!-- FORM -->
   <section class="card">
     <h3 style="margin:0 0 8px 0">Add Entry</h3>
-
     <div class="row" style="margin:6px 0 10px 0">
       <button id="btnStartNow" class="ghost">Start (now)</button>
       <button id="btnStreetNow" class="ghost">Hit Street (now)</button>
@@ -94,7 +92,10 @@
       <div class="row" style="grid-column:1/-1;justify-content:space-between;align-items:center">
         <label class="pill"><input id="offDay" type="checkbox"> Off day</label>
         <div class="row"><span class="pill"><small>Office:</small> <b id="officeH">—</b></span><span class="pill"><small>Route:</small> <b id="routeH">—</b></span><span class="pill"><small>Total:</small> <b id="totalH">—</b></span></div>
-        <div class="row"><button id="save">Save</button></div>
+        <div class="row">
+  <button id="save">Save</button>
+  <button id="delete" class="ghost">Delete</button>
+ </div>
       </div>
     </div>
   </section>
@@ -188,7 +189,7 @@
   function diffHours(d, t1, t2){ if(!t1||!t2) return null; const a=DateTime.fromISO(`${d}T${t1}`), b=DateTime.fromISO(`${d}T${t2}`); let h=(b.toMillis()-a.toMillis())/3.6e6; if(h<0) h+=24; return Math.round(h*100)/100; }
   function computeBreakdown(){
     if (offDay.checked){ officeH.textContent='0.00'; routeH.textContent='0.00'; totalH.textContent='0.00'; return 0; }
-    const d=date.value; const s=start.value||'08:00'; // default 08:00
+    const d=date.value; const s=start.value||'08:00';
     const off=diffHours(d, s, departTime.value);
     const rte=diffHours(d, departTime.value, end.value);
     const tot=(off??0)+(rte??0);
@@ -199,180 +200,236 @@
   }
   ;[date,start,departTime,returnTime,end,parcels,letters,miles,offDay].forEach(el=> el.addEventListener('input', computeBreakdown));
 
- <!-- ===== Edit-by-Date (prefill + update) ===== -->
-<script>
-// collect current form into a DB payload (same shape you already use)
-function collectPayload(userId){
-  const d = date.value;
-  const s = start.value || '08:00';
-
-  const diff = (t1,t2)=> {
-    if(!t1 || !t2) return null;
-    const a = DateTime.fromISO(`${d}T${t1}`);
-    const b = DateTime.fromISO(`${d}T${t2}`);
-    let h = (b.toMillis()-a.toMillis())/3.6e6;
-    if (h < 0) h += 24;
-    return Math.round(h*100)/100;
-  };
-
-  const off = diff(s, departTime.value);
-  const rte = diff(departTime.value, end.value);
-  const tot = offDay.checked ? 0 : ((off??0)+(rte??0));
-
-  return {
-    user_id:        userId,
-    work_date:      d,
-    route:          route.value || null,
-    start_time:     offDay.checked ? null : (s || null),
-    end_time:       offDay.checked ? null : (end.value || null),
-    hours:          offDay.checked ? 0 : (tot || null),
-    parcels:        offDay.checked ? 0 : (+parcels.value||0),
-    letters:        offDay.checked ? 0 : (+letters.value||0),
-    miles:          offDay.checked ? 0 : (+miles.value||0),
-    mood:           offDay.checked ? '🛑 off' : (mood.value||null),
-    notes:          notes.value || null,
-    status:         offDay.checked ? 'off' : 'worked',
-    office_start:   s || null,
-    depart_time:    departTime.value || null,
-    return_time:    returnTime.value || null,
-    office_minutes: off!=null ? off.toFixed(2) : null,
-    route_minutes:  rte!=null ? rte.toFixed(2) : null,
-    weather_json:   null
-  };
-}
-
-function fillForm(r){
-  route.value       = r.route || '';
-  start.value       = r.start_time || '08:00';
-  end.value         = r.end_time   || '';
-  departTime.value  = r.depart_time || '';
-  returnTime.value  = r.return_time || '';
-  parcels.value     = r.parcels || 0;
-  letters.value     = r.letters || 0;
-  miles.value       = r.miles   || 0;
-  mood.value        = r.mood    || '';
-  notes.value       = r.notes   || '';
-  offDay.checked    = (r.status === 'off');
-  try { computeBreakdown(); } catch(_) {}
-}
-
-let editingKey = null; // { user_id, work_date } when we’re editing
-
-async function loadByDate(){
-  editingKey = null;
-  const { data:{ user } } = await sb.auth.getUser();
-  if (!user) return;
-  const d = date.value;
-  if (!d) return;
-
-  const { data, error } = await sb
-    .from('entries')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('work_date', d)
-    .limit(1)
-    .maybeSingle();
-
-  if (error && error.code !== 'PGRST116') { // ignore “no rows”
-    console.error(error);
-    return;
+  /* ===== Edit-by-Date (prefill + UPSERT save) ===== */
+  function collectPayload(userId){
+    const d = date.value;
+    const s = start.value || '08:00';
+    const diff = (t1,t2)=> {
+      if(!t1 || !t2) return null;
+      const a = DateTime.fromISO(`${d}T${t1}`);
+      const b = DateTime.fromISO(`${d}T${t2}`);
+      let h = (b.toMillis()-a.toMillis())/3.6e6;
+      if (h < 0) h += 24;
+      return Math.round(h*100)/100;
+    };
+    const off = diff(s, departTime.value);
+    const rte = diff(departTime.value, end.value);
+    const tot = offDay.checked ? 0 : ((off??0)+(rte??0));
+    return {
+      user_id:        userId,
+      work_date:      d,
+      route:          route.value || null,
+      start_time:     offDay.checked ? null : (s || null),
+      end_time:       offDay.checked ? null : (end.value || null),
+      hours:          offDay.checked ? 0 : (tot || null),
+      parcels:        offDay.checked ? 0 : (+parcels.value||0),
+      letters:        offDay.checked ? 0 : (+letters.value||0),
+      miles:          offDay.checked ? 0 : (+miles.value||0),
+      mood:           offDay.checked ? '🛑 off' : (mood.value||null),
+      notes:          notes.value || null,
+      status:         offDay.checked ? 'off' : 'worked',
+      office_start:   s || null,
+      depart_time:    departTime.value || null,
+      return_time:    returnTime.value || null,
+      office_minutes: off!=null ? off.toFixed(2) : null,
+      route_minutes:  rte!=null ? rte.toFixed(2) : null,
+      weather_json:   null
+    };
   }
 
-  const saveBtn = document.getElementById('save');
-  if (data) {
-    // EDIT mode
-    editingKey = { user_id: user.id, work_date: d };
-    fillForm(data);
-    saveBtn.textContent = 'Update';
-    saveBtn.classList.add('ghost');
-  } else {
-    // CREATE mode
-    saveBtn.textContent = 'Save';
-    saveBtn.classList.remove('ghost');
+  function fillForm(r){
+    route.value       = r.route || '';
+    start.value       = r.start_time || '08:00';
+    end.value         = r.end_time   || '';
+    departTime.value  = r.depart_time || '';
+    returnTime.value  = r.return_time || '';
+    parcels.value     = r.parcels || 0;
+    letters.value     = r.letters || 0;
+    miles.value       = r.miles   || 0;
+    mood.value        = r.mood    || '';
+    notes.value       = r.notes   || '';
+    offDay.checked    = (r.status === 'off');
+    try { computeBreakdown(); } catch(_) {}
   }
-}
 
-// Hook date change + run once at boot (we’ll also call it in your boot block below)
-date.addEventListener('change', loadByDate);
+  let editingKey = null;
 
-// Insert-or-Update (UPSERT-ish) handler
-(function replaceSave(){
-  const btn = document.getElementById('save');
-  const clone = btn.cloneNode(true);
-  btn.parentNode.replaceChild(clone, btn);
-
-  clone.addEventListener('click', async ()=>{
+  async function loadByDate(){
+    editingKey = null;
     const { data:{ user } } = await sb.auth.getUser();
-    if (!user) { alert('No session. Try Link devices or refresh.'); return; }
+    if (!user) return;
+    const d = date.value; if (!d) return;
 
-    const payload = collectPayload(user.id);
-    let error;
+    const { data, error } = await sb
+      .from('entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('work_date', d)
+      .limit(1)
+      .maybeSingle();
 
-    if (editingKey) {
-      // UPDATE existing row for that day
-      ({ error } = await sb.from('entries')
-        .update(payload)
-        .eq('user_id', editingKey.user_id)
-        .eq('work_date', editingKey.work_date));
+    if (error && error.code !== 'PGRST116') { console.error(error); return; }
+
+    const saveBtn = document.getElementById('save');
+    if (data) {
+      editingKey = { user_id: user.id, work_date: d };
+      fillForm(data);
+      saveBtn.textContent = 'Update';
+      saveBtn.classList.add('ghost');
     } else {
-      // INSERT new row
-      ({ error } = await sb.from('entries').insert(payload));
+      saveBtn.textContent = 'Save';
+      saveBtn.classList.remove('ghost');
+      // leave fields as-is for a fresh entry
     }
+  }
+
+  date.addEventListener('change', loadByDate);
+
+  // Save or Update (UPSERT)
+  (function replaceSave(){
+    const btn = document.getElementById('save');
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+
+    clone.addEventListener('click', async ()=>{
+      const { data:{ user } } = await sb.auth.getUser();
+      if (!user) { alert('No session. Try Link devices or refresh.'); return; }
+
+      const payload = collectPayload(user.id);
+
+      const { error } = await sb
+        .from('entries')
+        .upsert(payload, { onConflict: 'user_id,work_date' });
+
+      dWrite.textContent = error ? 'Failed' : 'OK';
+      if (error) { alert(error.message); return; }
+
+      const rows = await fetchEntries();
+      renderTable(rows); buildCharts(rows); buildSnapshot(rows);
+
+      // remain in edit mode for this date
+      editingKey = { user_id: user.id, work_date: date.value };
+      clone.textContent = 'Update';
+      clone.classList.add('ghost');
+    });
+  })();
+  /* ===== End edit-by-date ===== */
+  /* ===== Delete entry by date ===== */
+(function wireDelete(){
+  const del = document.getElementById('delete');
+  if (!del) return;
+
+  del.addEventListener('click', async ()=>{
+    if (!editingKey) {
+      alert('Pick a date that already has an entry (or let it prefill) before deleting.');
+      return;
+    }
+    if (!confirm(`Delete entry for ${editingKey.work_date}?`)) return;
+
+    const { error } = await sb
+      .from('entries')
+      .delete()
+      .eq('user_id', editingKey.user_id)
+      .eq('work_date', editingKey.work_date);
 
     dWrite.textContent = error ? 'Failed' : 'OK';
     if (error) { alert(error.message); return; }
 
+    // Clear form + reset state
+    route.value=''; start.value='08:00'; end.value='';
+    departTime.value=''; returnTime.value='';
+    parcels.value=0; letters.value=0; miles.value=0;
+    mood.value=''; notes.value=''; offDay.checked=false;
+    editingKey = null;
+    document.getElementById('save').textContent='Save';
+    document.getElementById('save').classList.remove('ghost');
+    try { computeBreakdown(); } catch(_) {}
+
+    // Refresh UI
     const rows = await fetchEntries();
     renderTable(rows); buildCharts(rows); buildSnapshot(rows);
-
-    // stay in edit mode for the chosen date
-    editingKey = { user_id: user.id, work_date: date.value };
-    clone.textContent = 'Update';
-    clone.classList.add('ghost');
   });
 })();
-</script>
-<!-- ===== End Edit-by-Date ===== -->
 
   // Fetch & render
   async function fetchEntries(){
     const { data:{ user } } = await sb.auth.getUser(); if(!user) return [];
-    const { data, error } = await sb.from('entries').select('*').eq('user_id',user.id).order('work_date',{ascending:false}).limit(300);
-    if(error){ console.error(error); return []; } return data;
+    const { data, error } = await sb
+      .from('entries')
+      .select('*')
+      .eq('user_id',user.id)
+      .order('work_date',{ascending:false})
+      .limit(300);
+    if(error){ console.error(error); return []; }
+    return data;
   }
 
   function classifyRow(total, avg){ if(total==null||avg==null) return ''; const diff=(total-avg)/avg; if(diff<=-0.15) return 'light'; if(diff>=0.15) return 'heavy'; return 'typical'; }
 
   function renderTable(rows){
     const tbody=document.querySelector('#tbl tbody'); tbody.innerHTML='';
-    // Baselines by DOW
-    const byDow=Array.from({length:7},()=>[]); rows.forEach(r=>{ if(r.status==='off') return; const h=Number(r.hours||0); const dow=new Date(r.work_date).getDay(); if(h>0) byDow[dow].push(h); });
+    const byDow=Array.from({length:7},()=>[]);
+    rows.forEach(r=>{ if(r.status==='off') return; const h=Number(r.hours||0); const dow=new Date(r.work_date).getDay(); if(h>0) byDow[dow].push(h); });
     const avgByDow=byDow.map(list=> list.length? (list.reduce((a,b)=>a+b,0)/list.length) : null);
-    for(const r of rows){ const tot=Number(r.hours||0)||null; const dow=new Date(r.work_date).getDay(); const avg=avgByDow[dow]; const cls=classifyRow(tot,avg); const offH=(r.office_minutes!=null)? Number(r.office_minutes).toFixed(2):''; const rteH=(r.route_minutes!=null)? Number(r.route_minutes).toFixed(2):'';
-      const tr=document.createElement('tr'); if(cls) tr.classList.add(cls); tr.innerHTML=`<td>${r.work_date}</td><td>${r.route||''}</td><td>${r.status||'worked'}</td><td class="right">${offH}</td><td class="right">${rteH}</td><td class="right">${tot!=null? tot.toFixed(2):''}</td><td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.miles||0}</td>`; tbody.appendChild(tr); }
+    for(const r of rows){
+      const tot=Number(r.hours||0)||null;
+      const dow=new Date(r.work_date).getDay();
+      const avg=avgByDow[dow];
+      const cls=classifyRow(tot,avg);
+      const offH=(r.office_minutes!=null)? Number(r.office_minutes).toFixed(2):'';
+      const rteH=(r.route_minutes!=null)? Number(r.route_minutes).toFixed(2):'';
+      const tr=document.createElement('tr'); if(cls) tr.classList.add(cls);
+      tr.innerHTML=`<td>${r.work_date}</td><td>${r.route||''}</td><td>${r.status||'worked'}</td><td class="right">${offH}</td><td class="right">${rteH}</td><td class="right">${tot!=null? tot.toFixed(2):''}</td><td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.miles||0}</td>`;
+      tbody.appendChild(tr);
+    }
   }
 
   // CSV export
   $('exportCsv').addEventListener('click', async ()=>{
-    const rows=await fetchEntries(); const headers=['work_date','route','status','start_time','depart_time','return_time','end_time','hours','office_minutes','route_minutes','parcels','letters','miles','mood','notes','created_at'];
+    const rows=await fetchEntries();
+    const headers=['work_date','route','status','start_time','depart_time','return_time','end_time','hours','office_minutes','route_minutes','parcels','letters','miles','mood','notes','created_at'];
     const lines=[headers.join(',')];
-    for(const r of rows){ const vals=headers.map(h=>{const v=r[h]; if(v==null) return ''; const s=String(v).replace(/"/g,'""'); return /[",\n]/.test(s)? `"${s}"`: s;}); lines.push(vals.join(',')); }
-    const blob=new Blob([lines.join('\n')],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='route-stats.csv'; a.click();
+    for(const r of rows){
+      const vals=headers.map(h=>{
+        const v=r[h];
+        if(v==null) return '';
+        const s=String(v).replace(/"/g,'""');
+        return /[",\n]/.test(s)? `"${s}"`: s;
+      });
+      lines.push(vals.join(','));
+    }
+    const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='route-stats.csv';
+    a.click();
   });
 
   // Charts
   let dowChart, volChart; function destroyCharts(){ [dowChart,volChart].forEach(c=>c&&c.destroy()); }
   function buildCharts(rows){
-    destroyCharts(); const workRows=rows.filter(r=>r.status!=='off');
+    destroyCharts();
+    const workRows=rows.filter(r=>r.status!=='off');
     const byDow=Array.from({length:7},()=>({h:0,c:0}));
-    for(const r of workRows){ const h=Number(r.hours||0); if(h>0){ const dow=new Date(r.work_date).getDay(); byDow[dow].h+=h; byDow[dow].c++; } }
+    for(const r of workRows){
+      const h=Number(r.hours||0);
+      if(h>0){ const dow=new Date(r.work_date).getDay(); byDow[dow].h+=h; byDow[dow].c++; }
+    }
     const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const dowData=byDow.map(x=> x.c? +(x.h/x.c).toFixed(2):0);
-    dowChart=new Chart(document.getElementById('dowChart'),{type:'bar',data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData}]},options:{responsive:true,plugins:{legend:{display:false}}}});
+    dowChart=new Chart(document.getElementById('dowChart'),{
+      type:'bar',
+      data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData}]},
+      options:{responsive:true,plugins:{legend:{display:false}}}
+    });
 
     const sorted=[...rows].sort((a,b)=>a.work_date.localeCompare(b.work_date));
     const volData=sorted.map(r=> (Number(r.parcels||0)+Number(r.letters||0)) );
-    volChart=new Chart(document.getElementById('volChart'),{type:'line',data:{labels:sorted.map(r=>r.work_date),datasets:[{label:'Parcels+Letters',data:volData} ]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}});
+    volChart=new Chart(document.getElementById('volChart'),{
+      type:'line',
+      data:{labels:sorted.map(r=>r.work_date),datasets:[{label:'Parcels+Letters',data:volData}]},
+      options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}
+    });
   }
 
   // Snapshot cards
@@ -381,21 +438,32 @@ date.addEventListener('change', loadByDate);
   function buildSnapshot(rows){
     const today=DateTime.now(); const dow=today.weekday%7; const workRows=rows.filter(r=>r.status!=='off');
     const byDow=Array.from({length:7},()=>({h:0,c:0, offShare:[] }));
-    for(const r of workRows){ const h=Number(r.hours||0); if(h>0){ const d=new Date(r.work_date).getDay(); byDow[d].h+=h; byDow[d].c++; const off=Number(r.office_minutes||0); const rt=Number(r.route_minutes||0); const tot=off+rt; if(tot>0) byDow[d].offShare.push(off/tot); } }
+    for(const r of workRows){
+      const h=Number(r.hours||0);
+      if(h>0){
+        const d=new Date(r.work_date).getDay();
+        byDow[d].h+=h; byDow[d].c++;
+        const off=Number(r.office_minutes||0);
+        const rt=Number(r.route_minutes||0);
+        const tot=off+rt;
+        if(tot>0) byDow[d].offShare.push(off/tot);
+      }
+    }
     const avgH=byDow.map(x=> x.c? x.h/x.c : null);
     const avgOffShare=byDow.map(x=> x.offShare.length? (x.offShare.reduce((a,b)=>a+b,0)/x.offShare.length) : null);
 
     const todayAvgH=avgH[dow]; expEnd.textContent = todayAvgH? hhmmFrom(today.toISODate(), todayAvgH) : '—';
     expMeta.textContent = `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} avg ${todayAvgH? todayAvgH.toFixed(2)+'h':'—'}`;
 
-    // Office share tile: today vs DOW baseline (if we have today's split entered)
-    const d=date.value; const s=start.value||'08:00'; const off=diffHours(d,s,departTime.value)||0; const rte=diffHours(d,departTime.value,end.value)||0; const currShare = (off+rte)>0? off/(off+rte) : null;
+    const d=date.value; const s=start.value||'08:00';
+    const off=diffHours(d,s,departTime.value)||0;
+    const rte=diffHours(d,departTime.value,end.value)||0;
+    const currShare = (off+rte)>0? off/(off+rte) : null;
     const baseShare = avgOffShare[dow];
     officeShare.textContent = currShare!=null? Math.round(currShare*100)+'%' : (baseShare!=null? Math.round(baseShare*100)+'%':'—');
     const delta = (currShare!=null && baseShare!=null)? Math.round((currShare-baseShare)*100) : null;
     officeMeta.textContent = delta==null? 'vs DOW baseline' : (delta===0? 'at baseline' : (delta>0? `↑ +${delta}% vs baseline` : `↓ ${Math.abs(delta)}% vs baseline`));
 
-    // Week-over-week arrows
     const startW=today.startOf('week'); const lastStart=startW.minus({weeks:1}); const lastEnd=startW.minus({days:1});
     const inRange=(r,from,to)=>{ const d=DateTime.fromISO(r.work_date); return d>=from && d<=to; };
     const thisW=workRows.filter(r=> inRange(r,startW,today));
@@ -407,21 +475,33 @@ date.addEventListener('change', loadByDate);
     const vLast=sum(lastW,r=>Number(r.parcels||0)+Number(r.letters||0));
     const dh=pct(hThis,hLast), dv=pct(vThis,vLast);
     const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-    $('wkHours').textContent = (hThis||0).toFixed(2); $('wkVol').textContent = (vThis||0).toString();
-    const wh=$('wkHoursDelta'), wv=$('wkVolDelta'); wh.textContent=fmt(dh); wv.textContent=fmt(dv);
+    $('wkHours').textContent = (hThis||0).toFixed(2);
+    $('wkVol').textContent = (vThis||0).toString();
+    const wh=$('wkHoursDelta'), wv=$('wkVolDelta');
+    wh.textContent=fmt(dh); wv.textContent=fmt(dv);
     wh.className='pill '+(dh==null?'':dh>=0?'up':'down');
     wv.className='pill '+(dv==null?'':dv>=0?'up':'down');
   }
 
   // Realtime
-  try{ sb.channel('entries-feed').on('postgres_changes',{event:'*',schema:'public',table:'entries'}, async ()=>{ const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); }).subscribe(); }catch(e){ console.warn('Realtime not enabled:', e?.message||e); }
+  try{
+    sb.channel('entries-feed')
+      .on('postgres_changes',{event:'*',schema:'public',table:'entries'}, async ()=>{
+        const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows);
+      })
+      .subscribe();
+  }catch(e){ console.warn('Realtime not enabled:', e?.message||e); }
 
   // FAB focus
   $('fab').addEventListener('click',()=>{ window.scrollTo({ top:0, behavior:'smooth' }); $('departTime').focus(); });
 
   // Boot
-  (async()=>{ $('date').value=todayStr();  await loadByDate(); const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown(); })();
-
-  </script>
+  (async()=>{
+    $('date').value = todayStr();
+    await loadByDate();                 // prefill today if it exists
+    const rows = await fetchEntries();
+    renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown();
+  })();
+</script>
 </body>
 </html>
