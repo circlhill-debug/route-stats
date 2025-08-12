@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Route Stats — Dashboard</title>
-<!-- ROUTE STATS (NOT SnapTrack). Anonymous Auth + Realtime-ready. -->
+<!-- ROUTE STATS (Anon Auth). Exact Time Split + Quick-Tap Timers + Off-Day Autofill -->
 <style>
   :root{ --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#a6abb5; --brand:#2b7fff; --good:#88f0a7; --bad:#ff9aa8; --warn:#ffd08a }
   [data-theme="sunrise"]{ --bg:#fff7f0; --card:#fff; --border:#e7d9cc; --text:#222; --muted:#7a6d61; --brand:#ff6a3d; --good:#1a8735; --bad:#b21634; --warn:#b26f00 }
@@ -65,11 +65,26 @@
   <!-- FORM -->
   <section class="card">
     <h3 style="margin:0 0 8px 0">Add Entry</h3>
+
+    <!-- Quick-tap timers -->
+    <div class="row" style="margin:6px 0 10px 0">
+      <button id="btnStartNow" class="ghost">Start Timer (office)</button>
+      <button id="btnStreetNow" class="ghost">Hit Street (now)</button>
+      <button id="btnClockNow" class="ghost">Clock Out (now)</button>
+    </div>
+
     <div class="grid" style="grid-template-columns:repeat(2,1fr);gap:10px">
       <div><label>Date</label><input id="date" type="date"></div>
       <div><label>Route</label><input id="route" type="text" placeholder="Primary / Aux / Amazon…"></div>
+
       <div><label>Start Time</label><input id="start" type="time" value="08:00"></div>
       <div><label>End Time</label><input id="end" type="time" placeholder="--:--"></div>
+
+      <!-- Time Split (exact times) -->
+      <div><label>Office Start</label><input id="officeStart" type="time" placeholder="--:--"></div>
+      <div><label>Hit Street</label><input id="departTime" type="time" placeholder="--:--"></div>
+      <div><label>Return to Office (optional)</label><input id="returnTime" type="time" placeholder="--:--"></div>
+
       <div><label>Parcels</label><input id="parcels" type="number" min="0" value="0"></div>
       <div><label>Letters</label><input id="letters" type="number" min="0" value="0"></div>
       <div><label>Flats</label><input id="flats" type="number" min="0" value="0"></div>
@@ -77,6 +92,7 @@
       <div><label>Weather (notes)</label><input id="weather" type="text" placeholder="Sunny 72°, light wind"></div>
       <div><label>Mood</label><select id="mood"><option value="">—</option><option>🔥 dialed in</option><option>🙂 good</option><option>😐 meh</option><option>🥵 cooked</option><option>🌧️ soggy</option><option>🛑 off</option></select></div>
       <div style="grid-column:1/-1"><label>Notes</label><textarea id="notes" rows="2" placeholder="Anything notable…"></textarea></div>
+
       <div class="row" style="grid-column:1/-1;justify-content:space-between">
         <div class="row">
           <label class="pill"><input id="offDay" type="checkbox"> Off day</label>
@@ -94,9 +110,9 @@
   <!-- TABLE -->
   <section class="card" style="grid-column:1/-1">
     <div class="row" style="justify-content:space-between"><h3 style="margin:0">Recent Entries</h3><button id="exportCsv" class="ghost">Export CSV</button></div>
-    <div style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:10px">
+    <div style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px">
       <table id="tbl"><thead><tr>
-        <th>Date</th><th>Route</th><th>Status</th><th class="right">Hours</th><th class="right">Parcels</th><th class="right">Letters</th><th class="right">Flats</th><th class="right">Miles</th>
+        <th>Date</th><th>Route</th><th>Status</th><th class="right">Hours</th><th class="right">Office/Route (h)</th><th class="right">Parcels</th><th class="right">Letters</th><th class="right">Flats</th><th class="right">Miles</th>
       </tr></thead><tbody></tbody></table>
     </div>
   </section>
@@ -107,12 +123,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // ==== PASTE YOUR PROJECT VALUES (I'll keep these in future files) ====
+  // ==== PASTE YOUR PROJECT VALUES ====
   const SUPABASE_URL  = 'https://ouwkdtiixkaydrtfdhnh.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91d2tkdGlpeGtheWRydGZkaG5oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUwMDc0NDksImV4cCI6MjA3MDU4MzQ0OX0.KI-dYG5_A8jvPEHSog3wlnLbIGYIHQR_4ztXHL2SzIg';
-  // ====================================================================
+  // ===================================
 
-  // Create client
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true } });
   const $ = id => document.getElementById(id);
   const DateTime = luxon.DateTime;
@@ -127,7 +142,7 @@
   const dConn=$('dConn'), dAuth=$('dAuth'), dWrite=$('dWrite');
   (async ()=>{ try{ await fetch(SUPABASE_URL,{mode:'no-cors'}); dConn.textContent='Connected'; }catch{ dConn.textContent='Error'; }})();
 
-  // Ensure anonymous session (requires Auth → Providers → Anonymous = Enabled)
+  // Ensure anonymous session
   (async function ensureAnon(){
     const { data:{ session } } = await sb.auth.getSession();
     if (session) { dAuth.textContent='Session'; return; }
@@ -138,6 +153,7 @@
 
   // Elements
   const date=$('date'), route=$('route'), start=$('start'), end=$('end'), parcels=$('parcels'), letters=$('letters'), flats=$('flats'), miles=$('miles'), weather=$('weather'), mood=$('mood'), notes=$('notes'), hoursPreview=$('hoursPreview'), offDay=$('offDay');
+  const officeStart=$('officeStart'), departTime=$('departTime'), returnTime=$('returnTime');
   const expEnd=$('expEnd'), expMeta=$('expMeta'), expParcels=$('expParcels'), expParcelsMeta=$('expParcelsMeta'), wkHours=$('wkHours'), wkHoursDelta=$('wkHoursDelta'), wkVol=$('wkVol'), wkVolDelta=$('wkVolDelta');
 
   function todayStr(){ return DateTime.now().toISODate(); }
@@ -150,38 +166,72 @@
     const e = DateTime.fromISO(`${date.value}T${end.value}`);
     let h = (e.toMillis()-s.toMillis())/3600000; if (h<0) h+=24; const v = Math.round(h*100)/100; hoursPreview.textContent=v.toFixed(2); return v;
   }
-  ;[start,end,date,offDay].forEach(el=>el.addEventListener('input', computeHours));
-  offDay.addEventListener('change',()=>{ if(offDay.checked){ end.value=''; parcels.value=letters.value=flats.value=miles.value=0; mood.value='🛑 off'; hoursPreview.textContent='0.00'; } });
+
+  function computeSplitMinutes(){
+    const d = date.value; const toDT = (t)=> t ? DateTime.fromISO(`${d}T${t}`) : null;
+    const os=toDT(officeStart.value), dp=toDT(departTime.value), co=toDT(end.value);
+    let officeMin=null, routeMin=null;
+    if (os && dp){ let diff=(dp.toMillis()-os.toMillis())/60000; if(diff<0) diff+=1440; officeMin=Math.round(diff); }
+    if (dp && co){ let diff=(co.toMillis()-dp.toMillis())/60000; if(diff<0) diff+=1440; routeMin=Math.round(diff); }
+    return { officeMin, routeMin };
+  }
+
+  ;[start,end,date,offDay,officeStart,departTime,returnTime].forEach(el=>el.addEventListener('input', computeHours));
+
+  // Off day autofill: set End Time to now, zero counts; hours stays 0
+  offDay.addEventListener('change', ()=>{
+    const nowHHMM = (()=>{ const d=new Date(); const hh=String(d.getHours()).padStart(2,'0'); const mm=String(d.getMinutes()).padStart(2,'0'); return `${hh}:${mm}`; })();
+    if (offDay.checked){ end.value = nowHHMM; parcels.value=letters.value=flats.value=miles.value=0; mood.value='🛑 off'; hoursPreview.textContent='0.00'; }
+  });
+
+  // Quick-tap buttons
+  function nowHHMM(){ const d=new Date(); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+  $('btnStartNow').addEventListener('click',()=>{ const n=nowHHMM(); if(!start.value) start.value=n; if(!officeStart.value) officeStart.value=n; computeHours(); });
+  $('btnStreetNow').addEventListener('click',()=>{ const n=nowHHMM(); departTime.value=n; if(!start.value) start.value=n; computeHours(); });
+  $('btnClockNow').addEventListener('click',()=>{ const n=nowHHMM(); end.value=n; computeHours(); });
 
   // Save
   $('save').addEventListener('click', async ()=>{
     const { data:{ user } } = await sb.auth.getUser();
     dAuth.textContent = user? 'Session' : 'No session';
+
     const payload = {
       user_id: user?.id,
       work_date: date.value,
       route: route.value || null,
       start_time: offDay.checked ? null : (start.value||null),
-      end_time: offDay.checked ? null : (end.value||null),
-      hours: offDay.checked ? 0 : computeHours(),
-      parcels: offDay.checked ? 0 : (+parcels.value||0),
-      letters: offDay.checked ? 0 : (+letters.value||0),
-      flats: offDay.checked ? 0 : (+flats.value||0),
-      miles: offDay.checked ? 0 : (+miles.value||0),
+      end_time:   offDay.checked ? null : (end.value||null),
+      hours:      offDay.checked ? 0 : computeHours(),
+      parcels:    offDay.checked ? 0 : (+parcels.value||0),
+      letters:    offDay.checked ? 0 : (+letters.value||0),
+      flats:      offDay.checked ? 0 : (+flats.value||0),
+      miles:      offDay.checked ? 0 : (+miles.value||0),
       weather_json: weather.value ? { note: weather.value } : null,
-      mood: mood.value || (offDay.checked ? '🛑 off' : null),
-      notes: notes.value || null,
-      status: offDay.checked ? 'off' : 'worked'
+      mood:        mood.value || (offDay.checked ? '🛑 off' : null),
+      notes:       notes.value || null,
+      status:      offDay.checked ? 'off' : 'worked',
+      office_start: officeStart.value || null,
+      depart_time:  departTime.value  || null,
+      return_time:  returnTime.value  || null
     };
+
+    const split = computeSplitMinutes();
+    if (split) {
+      if (split.officeMin!=null) payload.office_minutes = (split.officeMin/60).toFixed(2);
+      if (split.routeMin !=null) payload.route_minutes  = (split.routeMin /60).toFixed(2);
+    }
+
     const { error } = await sb.from('entries').insert(payload);
     dWrite.textContent = error ? 'Failed' : 'OK';
     if (error) { alert(error.message); return; }
-    clearForm();
+
+    // reset a few fields; keep date & start for convenience
+    end.value=''; officeStart.value=''; departTime.value=''; returnTime.value='';
+    parcels.value=letters.value=flats.value=miles.value=0; weather.value=''; notes.value=''; offDay.checked=false; hoursPreview.textContent='—';
+
     const rows = await fetchEntries();
     renderTable(rows); buildCharts(rows); buildSnapshot(rows);
   });
-
-  function clearForm(){ end.value=''; parcels.value=letters.value=flats.value=miles.value=0; weather.value=''; notes.value=''; offDay.checked=false; hoursPreview.textContent='—'; }
 
   // Fetch & render
   async function fetchEntries(){
@@ -195,17 +245,19 @@
   function renderTable(rows){
     const tbody = document.querySelector('#tbl tbody');
     tbody.innerHTML='';
-    for (const r of rows.slice(0,120)){
+    for (const r of rows.slice(0,160)){
+      const officeH = (r.office_minutes!=null) ? (Number(r.office_minutes).toFixed(2)) : '';
+      const routeH  = (r.route_minutes !=null) ? (Number(r.route_minutes ).toFixed(2)) : '';
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${r.work_date}</td><td>${r.route||''}</td><td>${r.status||'worked'}</td><td class="right">${r.hours?.toFixed? r.hours.toFixed(2): (r.hours??'')}</td><td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.flats||0}</td><td class="right">${r.miles||0}</td>`;
+      tr.innerHTML = `<td>${r.work_date}</td><td>${r.route||''}</td><td>${r.status||'worked'}</td><td class="right">${r.hours?.toFixed? r.hours.toFixed(2): (r.hours??'')}</td><td class="right">${officeH && routeH ? `${officeH}/${routeH}` : ''}</td><td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.flats||0}</td><td class="right">${r.miles||0}</td>`;
       tbody.appendChild(tr);
     }
   }
 
-  // CSV
+  // CSV export (includes split fields)
   $('exportCsv').addEventListener('click', async ()=>{
     const rows = await fetchEntries();
-    const headers = ['work_date','route','status','start_time','end_time','hours','parcels','letters','flats','miles','mood','notes','created_at'];
+    const headers = ['work_date','route','status','start_time','end_time','hours','office_start','depart_time','return_time','office_minutes','route_minutes','parcels','letters','flats','miles','mood','notes','created_at'];
     const lines = [headers.join(',')];
     for (const r of rows){
       const vals = headers.map(h=>{ const v=r[h]; if(v==null) return ''; const s=String(v).replace(/"/g,'""'); return /[",\n]/.test(s)? `"${s}"`: s; });
