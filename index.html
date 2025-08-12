@@ -154,7 +154,7 @@
   linkBtn.addEventListener('click', ()=> linkDlg.showModal());
   sendLink.addEventListener('click', async (e)=>{
     e.preventDefault();
-    const redirectTo = location.origin + location.pathname; // your Pages URL
+    const redirectTo = location.origin + location.pathname;
     const { error } = await sb.auth.signInWithOtp({ email: email.value, options:{ emailRedirectTo: redirectTo } });
     if (error) alert(error.message); else { alert('Check your email for the magic link.'); linkDlg.close(); }
   });
@@ -197,7 +197,7 @@
   }
   ;[date,start,departTime,returnTime,end,parcels,letters,miles,offDay].forEach(el=> el.addEventListener('input', computeBreakdown));
 
-  /* ===== Edit-by-Date (prefill + UPSERT save) ===== */
+  /* ===== Edit-by-Date (prefill + update-or-insert) ===== */
   function collectPayload(userId){
     const d = date.value;
     const s = start.value || '08:00';
@@ -276,13 +276,12 @@
     } else {
       saveBtn.textContent = 'Save';
       saveBtn.classList.remove('ghost');
-      // leave fields as-is for a fresh entry
     }
   }
 
   date.addEventListener('change', loadByDate);
 
-  // Save or Update (UPSERT)
+  // Save: update if exists, else insert (no ON CONFLICT)
   (function replaceSave(){
     const btn = document.getElementById('save');
     const clone = btn.cloneNode(true);
@@ -294,9 +293,27 @@
 
       const payload = collectPayload(user.id);
 
-      const { error } = await sb
+      // does a row exist for this (user_id, work_date)?
+      const { data: existing, error: findErr } = await sb
         .from('entries')
-        .upsert(payload, { onConflict: 'user_id,work_date' });
+        .select('user_id')
+        .eq('user_id', payload.user_id)
+        .eq('work_date', payload.work_date)
+        .limit(1)
+        .maybeSingle();
+
+      let error = null;
+      if (existing) {
+        ({ error } = await sb
+          .from('entries')
+          .update(payload)
+          .eq('user_id', payload.user_id)
+          .eq('work_date', payload.work_date));
+      } else {
+        ({ error } = await sb
+          .from('entries')
+          .insert(payload));
+      }
 
       dWrite.textContent = error ? 'Failed' : 'OK';
       if (error) { alert(error.message); return; }
@@ -304,7 +321,6 @@
       const rows = await fetchEntries();
       renderTable(rows); buildCharts(rows); buildSnapshot(rows);
 
-      // remain in edit mode for this date
       editingKey = { user_id: user.id, work_date: date.value };
       clone.textContent = 'Update';
       clone.classList.add('ghost');
