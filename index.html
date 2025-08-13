@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Route Stats — Live Dashboard</title>
 <style>
-  :root{ --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#9aa0aa; --brand:#2b7fff; --good:#7CE38B; --warn:#FFD27A; --bad:#FF8FA1 }
+  :root{
+    --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#9aa0aa;
+    --brand:#2b7fff; /* will be dynamically tweaked by weekly trends */
+    --good:#7CE38B; --warn:#FFD27A; --bad:#FF8FA1; --orange:#ff8a00; --blue:#2b7fff; --yellow:#ffd54a
+  }
   *{box-sizing:border-box}
   body{ margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Inter,Segoe UI,Roboto,Arial,sans-serif }
   header{ border-bottom:1px solid var(--border); padding:14px 16px }
@@ -30,11 +34,19 @@
   .fab{ position:fixed; right:16px; bottom:16px; z-index:10 }
   #diag{ position:sticky; top:0; z-index:999; background:#111; color:#ddd; font:12px/1.35 system-ui; padding:6px 10px; border-bottom:1px solid #222 }
   #diag b{ color:#fff }
+  /* row coloring */
   tr.light td{ background:linear-gradient(90deg, rgba(124,227,139,.07), transparent) }
   tr.heavy td{ background:linear-gradient(90deg, rgba(255,143,161,.10), transparent) }
   tr.typical td{ background:linear-gradient(90deg, rgba(255,210,122,.08), transparent) }
   .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center }
   dialog{ background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:12px; padding:16px }
+  /* badges */
+  .badge{ display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 8px; border-radius:999px; border:1px solid var(--border) }
+  .badge.ml{ background:rgba(124,227,139,.08); color:var(--good) }
+  .badge.dow{ background:rgba(43,127,255,.10); color:var(--brand) }
+  .badge.low{ background:rgba(255,143,161,.10); color:var(--bad) }
+  .badge.med{ background:rgba(255,210,122,.12); color:var(--warn) }
+  .badge.high{ background:rgba(124,227,139,.12); color:var(--good) }
 </style>
 </head>
 <body>
@@ -54,7 +66,11 @@
   <section class="card">
     <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
       <div class="row" style="gap:8px;align-items:stretch">
-        <div class="stat"><small>Expected End (today)</small><strong id="expEnd" style="font-size:20px">—</strong><small id="expMeta" style="color:var(--muted)">DOW avg —</small></div>
+        <div class="stat">
+          <small>Expected End (today) <span id="modeBadge" class="badge dow">DOW avg</span> <span id="confBadge" class="badge"></span></small>
+          <strong id="expEnd" style="font-size:20px">—</strong>
+          <small id="expMeta" style="color:var(--muted)">DOW avg —</small>
+        </div>
         <div class="stat"><small>Office Share</small><strong id="officeShare" style="font-size:20px">—</strong><small id="officeMeta" style="color:var(--muted)">vs DOW baseline</small></div>
       </div>
       <div class="row" style="gap:8px;align-items:stretch">
@@ -88,7 +104,7 @@
       <div><label>Letters</label><input id="letters" type="number" min="0" value="0"></div>
       <div><label>Miles</label><input id="miles" type="number" step="0.1" min="0" value="0"></div>
 
-      <!-- WEATHER (new) -->
+      <!-- WEATHER -->
       <div><label>Weather</label>
         <select id="weather">
           <option value="">—</option>
@@ -157,10 +173,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // ==== YOUR SUPABASE VALUES ====
+  // ==== YOUR SUPABASE VALUES (kept intact) ====
   const SUPABASE_URL  = 'https://ouwkdtiixkaydrtfdhnh.supabase.co';
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91d2tkdGlpeGtheWRydGZkaG5oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUwMDc0NDksImV4cCI6MjA3MDU4MzQ0OX0.KI-dYG5_A8jvPEHSog3wlnLbIGYIHQR_4ztXHL2SzIg';
-  // ==============================
+  // ============================================
 
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true } });
   const $ = id => document.getElementById(id);
@@ -195,6 +211,7 @@
   const offDay=$('offDay');
   const officeH=$('officeH'), routeH=$('routeH'), totalH=$('totalH');
   const expEnd=$('expEnd'), expMeta=$('expMeta'), officeShare=$('officeShare'), officeMeta=$('officeMeta');
+  const modeBadge=$('modeBadge'), confBadge=$('confBadge');
 
   function todayStr(){ return DateTime.now().toISODate(); }
   date.value = todayStr();
@@ -352,70 +369,80 @@
   })();
   /* ===== End edit-by-date ===== */
 
+  // ------- Two‑factor predictor (parcels, letters -> hours) -------
+  function fitTwoFactor(rows){
+    const data = rows.filter(r => r.status!=='off')
+                     .map(r => ({ p:Number(r.parcels||0), l:Number(r.letters||0), y:Number(r.hours||0) }))
+                     .filter(r => isFinite(r.p) && isFinite(r.l) && isFinite(r.y));
+    if (data.length < 8) return null;
+
+    let Sx0=data.length, Sp=0, Sl=0, Sy=0, Spp=0, Sll=0, Spl=0, Spy=0, Sly=0;
+    for(const r of data){ Sp+=r.p; Sl+=r.l; Sy+=r.y; Spp+=r.p*r.p; Sll+=r.l*r.l; Spl+=r.p*r.l; Spy+=r.p*r.y; Sly+=r.l*r.y; }
+    const \u03bb=1e-6;
+    const A=[[Sx0,Sp,Sl],[Sp,Spp+\u03bb,Spl],[Sl,Spl,Sll+\u03bb]];
+    const b=[Sy,Spy,Sly];
+    function det3(m){ return m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1]) - m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]); }
+    const dA=det3(A); if(Math.abs(dA)<1e-12) return null;
+    function solveCramer(A,b,i){ const M=A.map(r=>r.slice()); M[0][i]=b[0]; M[1][i]=b[1]; M[2][i]=b[2]; return det3(M)/dA; }
+    const b0=solveCramer(A,b,0), bP=solveCramer(A,b,1), bL=solveCramer(A,b,2);
+    const ybar=Sy/Sx0; let ssTot=0, ssRes=0;
+    for(const r of data){ const yhat=b0+bP*r.p+bL*r.l; ssTot+=(r.y-ybar)**2; ssRes+=(r.y-yhat)**2; }
+    const R2=ssTot>0? 1-ssRes/ssTot : 0;
+    return { b0,bP,bL,R2,n:data.length };
+  }
+  function predictHours(model, p, l){
+    if(!model) return null;
+    const h = model.b0 + model.bP*Number(p||0) + model.bL*Number(l||0);
+    return isFinite(h) ? Math.max(0,h) : null;
+  }
+
   // Fetch & render
   async function fetchEntries(){
     const { data:{ user } } = await sb.auth.getUser(); if(!user) return [];
-    const { data, error } = await sb
-      .from('entries')
-      .select('*')
-      .eq('user_id',user.id)
-      .order('work_date',{ascending:false})
-      .limit(300);
-    if(error){ console.error(error); return []; }
-    return data;
+    const { data, error } = await sb.from('entries').select('*').eq('user_id',user.id).order('work_date',{ascending:false}).limit(300);
+    if(error){ console.error(error); return []; } return data;
   }
-
   function classifyRow(total, avg){ if(total==null||avg==null) return ''; const diff=(total-avg)/avg; if(diff<=-0.15) return 'light'; if(diff>=0.15) return 'heavy'; return 'typical'; }
 
-  // Charts (separate Parcels & Letters)
+  // Charts (separate)
   let dowChart, parcelsChart, lettersChart;
   function destroyCharts(){ [dowChart,parcelsChart,lettersChart].forEach(c=>c&&c.destroy()); }
-
   function buildCharts(rows){
-    destroyCharts();
-    const workRows = rows.filter(r=>r.status!=='off');
-
-    // DOW Averages (total hours)
+    destroyCharts(); const workRows=rows.filter(r=>r.status!=='off');
     const byDow=Array.from({length:7},()=>({h:0,c:0}));
-    for(const r of workRows){
-      const h=Number(r.hours||0);
-      if(h>0){ const dow=new Date(r.work_date).getDay(); byDow[dow].h+=h; byDow[dow].c++; }
-    }
+    for(const r of workRows){ const h=Number(r.hours||0); if(h>0){ const dow=new Date(r.work_date).getDay(); byDow[dow].h+=h; byDow[dow].c++; } }
     const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const dowData=byDow.map(x=> x.c? +(x.h/x.c).toFixed(2):0);
-    dowChart=new Chart(document.getElementById('dowChart'),{
-      type:'bar',
-      data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData}]},
-      options:{responsive:true,plugins:{legend:{display:false}}}
-    });
-
-    // Time series labels
+    dowChart=new Chart(document.getElementById('dowChart'),{type:'bar',data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData,backgroundColor:'rgba(43,127,255,0.35)',borderColor:'rgba(43,127,255,0.9)'}]},options:{responsive:true,plugins:{legend:{display:false}}}});
     const sorted=[...rows].sort((a,b)=>a.work_date.localeCompare(b.work_date));
     const labels=sorted.map(r=>r.work_date);
-
-    // Separate series
-    const parcelsSeries = sorted.map(r=> Number(r.parcels||0));
-    const lettersSeries = sorted.map(r=> Number(r.letters||0));
-
-    parcelsChart=new Chart(document.getElementById('parcelsChart'),{
-      type:'line',
-      data:{labels,datasets:[{label:'Parcels',data:parcelsSeries}]},
-      options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}
-    });
-
-    lettersChart=new Chart(document.getElementById('lettersChart'),{
-      type:'line',
-      data:{labels,datasets:[{label:'Letters',data:lettersSeries}]},
-      options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}
-    });
+    parcelsChart=new Chart(document.getElementById('parcelsChart'),{type:'line',data:{labels,datasets:[{label:'Parcels',data:sorted.map(r=>Number(r.parcels||0)),borderWidth:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}});
+    lettersChart=new Chart(document.getElementById('lettersChart'),{type:'line',data:{labels,datasets:[{label:'Letters',data:sorted.map(r=>Number(r.letters||0)),borderWidth:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}});
   }
 
-  // Snapshot cards (+ guarded Office Share)
+  // Snapshot cards (with predictor) + dynamic brand color + confidence
   function pct(a,b){ if(!b) return null; return ((a-b)/b)*100; }
   function hhmmFrom(baseDateStr, hours){ if(hours==null) return '—'; const d=DateTime.fromISO(baseDateStr).set({hour:8,minute:0}); return d.plus({hours}).toFormat('h:mm a'); }
+  function setBrandByTrend(dh,dp,dl){
+    const root=document.documentElement.style;
+    // If volumes or hours jump up, go orange; if drop notably, go yellow; else blue
+    const up = (p)=> p!=null && p>=5; const down=(p)=> p!=null && p<=-5;
+    if (up(dp) || up(dl) || up(dh)) root.setProperty('--brand','var(--orange)');
+    else if (down(dp) || down(dl) || down(dh)) root.setProperty('--brand','var(--yellow)');
+    else root.setProperty('--brand','var(--blue)');
+  }
+  function setConfBadge(R2){
+    confBadge.textContent=''; confBadge.className='badge';
+    if(R2==null) return;
+    const pct=Math.round(R2*100);
+    let tier='low', label='Low conf';
+    if (pct>=70){ tier='high'; label='High conf'; }
+    else if (pct>=40){ tier='med'; label='Med conf'; }
+    confBadge.className=`badge ${tier}`;
+    confBadge.textContent = `${label} • R²≈${pct}%`;
+  }
   function buildSnapshot(rows){
     const today=DateTime.now(); const dow=today.weekday%7; const workRows=rows.filter(r=>r.status!=='off');
-
     // Baselines (hours + office share by DOW)
     const byDow=Array.from({length:7},()=>({h:0,c:0, offShare:[] }));
     for(const r of workRows){
@@ -423,42 +450,51 @@
       if(h>0){
         const d=new Date(r.work_date).getDay();
         byDow[d].h+=h; byDow[d].c++;
-        const off=Number(r.office_minutes||0);
-        const rt=Number(r.route_minutes||0);
-        const tot=off+rt;
+        const off=Number(r.office_minutes||0), rt=Number(r.route_minutes||0), tot=off+rt;
         if(tot>0) byDow[d].offShare.push(off/tot);
       }
     }
     const avgH=byDow.map(x=> x.c? x.h/x.c : null);
     const avgOffShare=byDow.map(x=> x.offShare.length? (x.offShare.reduce((a,b)=>a+b,0)/x.offShare.length) : null);
 
-    const todayAvgH=avgH[dow]; expEnd.textContent = todayAvgH? hhmmFrom(today.toISODate(), todayAvgH) : '—';
-    expMeta.textContent = `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} avg ${todayAvgH? todayAvgH.toFixed(2)+'h':'—'}`;
+    // Two-factor prediction (parcels, letters)
+    const model = fitTwoFactor(rows);
+    const pToday = Number(parcels.value || 0);
+    const lToday = Number(letters.value || 0);
+    const predH  = (model && (pToday>0 || lToday>0)) ? predictHours(model, pToday, lToday) : null;
 
-    // Office share tile: use live split only when both present
+    if (predH != null) {
+      modeBadge.textContent = 'ML est'; modeBadge.className='badge ml';
+      setConfBadge(model.R2);
+      expEnd.textContent = hhmmFrom(DateTime.now().toISODate(), predH);
+      const r2 = (model.R2*100).toFixed(0);
+      expMeta.textContent = `βp=${model.bP.toFixed(2)} βl=${model.bL.toFixed(2)} • R²≈${r2}% • n=${model.n}`;
+    } else {
+      modeBadge.textContent = 'DOW avg'; modeBadge.className='badge dow';
+      setConfBadge(null);
+      const todayAvgH=avgH[dow]; expEnd.textContent = todayAvgH? hhmmFrom(today.toISODate(), todayAvgH) : '—';
+      expMeta.textContent = `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} avg ${todayAvgH? todayAvgH.toFixed(2)+'h':'—'}`;
+    }
+
+    // Office share tile
     const d=date.value; const s=start.value||'08:00';
     const offHNow = diffHours(d,s,departTime.value);
     const rteHNow = diffHours(d,departTime.value,end.value);
     let currShare = null;
-    if (offHNow != null && rteHNow != null && (offHNow + rteHNow) > 0) {
-      currShare = offHNow / (offHNow + rteHNow);
-    }
+    if (offHNow != null && rteHNow != null && (offHNow + rteHNow) > 0) currShare = offHNow / (offHNow + rteHNow);
     const baseShare = avgOffShare[dow];
-    if (currShare == null) {
-      officeShare.textContent = baseShare != null ? Math.round(baseShare*100)+'%' : '—';
-      officeMeta.textContent = 'vs DOW baseline';
-    } else {
+    if (currShare == null) { officeShare.textContent = baseShare != null ? Math.round(baseShare*100)+'%' : '—'; officeMeta.textContent = 'vs DOW baseline'; }
+    else {
       officeShare.textContent = Math.round(currShare*100)+'%';
       const delta = (baseShare != null) ? Math.round((currShare-baseShare)*100) : null;
       officeMeta.textContent = delta==null? 'vs DOW baseline' : (delta===0? 'at baseline' : (delta>0? `↑ +${delta}% vs baseline` : `↓ ${Math.abs(delta)}% vs baseline`));
     }
 
-    // Week-over-week arrows (hours, parcels, letters)
+    // Week-over-week arrows + dynamic brand color
     const startW=today.startOf('week'); const lastStart=startW.minus({weeks:1}); const lastEnd=startW.minus({days:1});
     const inRange=(r,from,to)=>{ const d=DateTime.fromISO(r.work_date); return d>=from && d<=to; };
     const thisW=rows.filter(r=> r.status!=='off' && inRange(r,startW,today));
     const lastW=rows.filter(r=> r.status!=='off' && inRange(r,lastStart,lastEnd));
-
     const sum=(arr,fn)=>arr.reduce((t,x)=>t+(fn(x)||0),0);
     const hThis=sum(thisW,r=>Number(r.hours||0));
     const hLast=sum(lastW,r=>Number(r.hours||0));
@@ -466,28 +502,35 @@
     const pLast=sum(lastW,r=>Number(r.parcels||0));
     const lThis=sum(thisW,r=>Number(r.letters||0));
     const lLast=sum(lastW,r=>Number(r.letters||0));
-
     const dh=pct(hThis,hLast), dp=pct(pThis,pLast), dl=pct(lThis,lLast);
     const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-
     $('wkHours').textContent   = (hThis||0).toFixed(2);
     $('wkParcels').textContent = (pThis||0).toString();
     $('wkLetters').textContent = (lThis||0).toString();
-
     const wh=$('wkHoursDelta'), wp=$('wkParcelsDelta'), wl=$('wkLettersDelta');
-    wh.textContent=fmt(dh);  wp.textContent=fmt(dp);  wl.textContent=fmt(dl);
+    wh.textContent=fmt(dh); wp.textContent=fmt(dp); wl.textContent=fmt(dl);
     wh.className='pill '+(dh==null?'':dh>=0?'up':'down');
     wp.className='pill '+(dp==null?'':dp>=0?'up':'down');
     wl.className='pill '+(dl==null?'':dl>=0?'up':'down');
+
+    // change brand color to highlight trend
+    setBrandByTrend(dh,dp,dl);
+
+    // also tint line chart colors based on trend
+    try{
+      const pc = dp!=null ? (dp>=0 ? 'rgba(255,138,0,0.9)' : 'rgba(43,127,255,0.9)') : 'rgba(43,127,255,0.9)';
+      const lc = dl!=null ? (dl>=0 ? 'rgba(255,138,0,0.9)' : 'rgba(43,127,255,0.9)') : 'rgba(43,127,255,0.9)';
+      parcelsChart.data.datasets[0].borderColor = pc;
+      lettersChart.data.datasets[0].borderColor = lc;
+      parcelsChart.update(); lettersChart.update();
+    }catch(_){}
   }
 
   // Realtime
   try{
-    sb.channel('entries-feed')
-      .on('postgres_changes',{event:'*',schema:'public',table:'entries'}, async ()=>{
-        const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows);
-      })
-      .subscribe();
+    sb.channel('entries-feed').on('postgres_changes',{event:'*',schema:'public',table:'entries'}, async ()=>{
+      const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows);
+    }).subscribe();
   }catch(e){ console.warn('Realtime not enabled:', e?.message||e); }
 
   // Table
@@ -518,31 +561,17 @@
     const headers=['work_date','route','status','start_time','depart_time','return_time','end_time','hours','office_minutes','route_minutes','parcels','letters','miles','weather_json','mood','notes','created_at'];
     const lines=[headers.join(',')];
     for(const r of rows){
-      const vals=headers.map(h=>{
-        const v=r[h];
-        if(v==null) return '';
-        const s=String(v).replace(/"/g,'""');
-        return /[",\n]/.test(s)? `"${s}"`: s;
-      });
+      const vals=headers.map(h=>{ const v=r[h]; if(v==null) return ''; const s=String(v).replace(/"/g,'""'); return /[",\n]/.test(s)? `"${s}"`: s;});
       lines.push(vals.join(','));
     }
-    const blob=new Blob([lines.join('\n')],{type:'text/csv'});
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='route-stats.csv';
-    a.click();
+    const blob=new Blob([lines.join('\n')],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='route-stats.csv'; a.click();
   });
 
   // FAB focus
   $('fab').addEventListener('click',()=>{ window.scrollTo({ top:0, behavior:'smooth' }); $('departTime').focus(); });
 
   // Boot
-  (async()=>{
-    $('date').value = todayStr();
-    await loadByDate();                 // prefill today if it exists
-    const rows = await fetchEntries();
-    renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown();
-  })();
+  (async()=>{ $('date').value=todayStr(); await loadByDate(); const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown(); })();
 </script>
 </body>
 </html>
