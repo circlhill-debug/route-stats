@@ -54,13 +54,13 @@
   <section class="card">
     <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
       <div class="row" style="gap:8px;align-items:stretch">
-  <div class="stat"><small>Hours (week)</small><div><strong id="wkHours">—</strong> <span id="wkHoursDelta" class="pill">—</span></div></div>
-  <div class="stat"><small>Parcels (week)</small><div><strong id="wkParcels">—</strong> <span id="wkParcelsDelta" class="pill">—</span></div></div>
-  <div class="stat"><small>Letters (week)</small><div><strong id="wkLetters">—</strong> <span id="wkLettersDelta" class="pill">—</span></div></div>
-    </div>
+        <div class="stat"><small>Expected End (today)</small><strong id="expEnd" style="font-size:20px">—</strong><small id="expMeta" style="color:var(--muted)">DOW avg —</small></div>
+        <div class="stat"><small>Office Share</small><strong id="officeShare" style="font-size:20px">—</strong><small id="officeMeta" style="color:var(--muted)">vs DOW baseline</small></div>
+      </div>
       <div class="row" style="gap:8px;align-items:stretch">
         <div class="stat"><small>Hours (week)</small><div><strong id="wkHours">—</strong> <span id="wkHoursDelta" class="pill">—</span></div></div>
-        <div class="stat"><small>Volume (week)</small><div><strong id="wkVol">—</strong> <span id="wkVolDelta" class="pill">—</span></div></div>
+        <div class="stat"><small>Parcels (week)</small><div><strong id="wkParcels">—</strong> <span id="wkParcelsDelta" class="pill">—</span></div></div>
+        <div class="stat"><small>Letters (week)</small><div><strong id="wkLetters">—</strong> <span id="wkLettersDelta" class="pill">—</span></div></div>
       </div>
     </div>
   </section>
@@ -100,7 +100,8 @@
 
   <!-- CHARTS -->
   <section class="card"><h3 style="margin:0 0 8px 0">Averages by Day of Week</h3><canvas id="dowChart" height="180"></canvas></section>
-  <section class="card"><h3 style="margin:0 0 8px 0">Parcels + Letters Over Time</h3><canvas id="volChart" height="180"></canvas></section>
+  <section class="card"><h3 style="margin:0 0 8px 0">Parcels Over Time</h3><canvas id="parcelsChart" height="180"></canvas></section>
+  <section class="card"><h3 style="margin:0 0 8px 0">Letters Over Time</h3><canvas id="lettersChart" height="180"></canvas></section>
 
   <!-- TABLE -->
   <section class="card" style="grid-column:1/-1">
@@ -295,7 +296,7 @@
       const payload = collectPayload(user.id);
 
       // does a row exist for this (user_id, work_date)?
-      const { data: existing, error: findErr } = await sb
+      const { data: existing } = await sb
         .from('entries')
         .select('user_id')
         .eq('user_id', payload.user_id)
@@ -344,6 +345,130 @@
 
   function classifyRow(total, avg){ if(total==null||avg==null) return ''; const diff=(total-avg)/avg; if(diff<=-0.15) return 'light'; if(diff>=0.15) return 'heavy'; return 'typical'; }
 
+  // Charts (separate Parcels & Letters)
+  let dowChart, parcelsChart, lettersChart;
+  function destroyCharts(){ [dowChart,parcelsChart,lettersChart].forEach(c=>c&&c.destroy()); }
+
+  function buildCharts(rows){
+    destroyCharts();
+    const workRows = rows.filter(r=>r.status!=='off');
+
+    // DOW Averages (total hours)
+    const byDow=Array.from({length:7},()=>({h:0,c:0}));
+    for(const r of workRows){
+      const h=Number(r.hours||0);
+      if(h>0){ const dow=new Date(r.work_date).getDay(); byDow[dow].h+=h; byDow[dow].c++; }
+    }
+    const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dowData=byDow.map(x=> x.c? +(x.h/x.c).toFixed(2):0);
+    dowChart=new Chart(document.getElementById('dowChart'),{
+      type:'bar',
+      data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData}]},
+      options:{responsive:true,plugins:{legend:{display:false}}}
+    });
+
+    // Time series labels
+    const sorted=[...rows].sort((a,b)=>a.work_date.localeCompare(b.work_date));
+    const labels=sorted.map(r=>r.work_date);
+
+    // Separate series
+    const parcelsSeries = sorted.map(r=> Number(r.parcels||0));
+    const lettersSeries = sorted.map(r=> Number(r.letters||0));
+
+    parcelsChart=new Chart(document.getElementById('parcelsChart'),{
+      type:'line',
+      data:{labels,datasets:[{label:'Parcels',data:parcelsSeries}]},
+      options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}
+    });
+
+    lettersChart=new Chart(document.getElementById('lettersChart'),{
+      type:'line',
+      data:{labels,datasets:[{label:'Letters',data:lettersSeries}]},
+      options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}
+    });
+  }
+
+  // Snapshot cards
+  function pct(a,b){ if(!b) return null; return ((a-b)/b)*100; }
+  function hhmmFrom(baseDateStr, hours){ if(hours==null) return '—'; const d=DateTime.fromISO(baseDateStr).set({hour:8,minute:0}); return d.plus({hours}).toFormat('h:mm a'); }
+  function buildSnapshot(rows){
+    const today=DateTime.now(); const dow=today.weekday%7; const workRows=rows.filter(r=>r.status!=='off');
+
+    // Baselines (hours + office share by DOW)
+    const byDow=Array.from({length:7},()=>({h:0,c:0, offShare:[] }));
+    for(const r of workRows){
+      const h=Number(r.hours||0);
+      if(h>0){
+        const d=new Date(r.work_date).getDay();
+        byDow[d].h+=h; byDow[d].c++;
+        const off=Number(r.office_minutes||0);
+        const rt=Number(r.route_minutes||0);
+        const tot=off+rt;
+        if(tot>0) byDow[d].offShare.push(off/tot);
+      }
+    }
+    const avgH=byDow.map(x=> x.c? x.h/x.c : null);
+    const avgOffShare=byDow.map(x=> x.offShare.length? (x.offShare.reduce((a,b)=>a+b,0)/x.offShare.length) : null);
+
+    const todayAvgH=avgH[dow]; expEnd.textContent = todayAvgH? hhmmFrom(today.toISODate(), todayAvgH) : '—';
+    expMeta.textContent = `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} avg ${todayAvgH? todayAvgH.toFixed(2)+'h':'—'}`;
+
+    // Office share tile: guarded (only when both times present)
+    const d=date.value; const s=start.value||'08:00';
+    const offHNow = diffHours(d,s,departTime.value);
+    const rteHNow = diffHours(d,departTime.value,end.value);
+    let currShare = null;
+    if (offHNow != null && rteHNow != null && (offHNow + rteHNow) > 0) {
+      currShare = offHNow / (offHNow + rteHNow);
+    }
+    const baseShare = avgOffShare[dow];
+    if (currShare == null) {
+      officeShare.textContent = baseShare != null ? Math.round(baseShare*100)+'%' : '—';
+      officeMeta.textContent = 'vs DOW baseline';
+    } else {
+      officeShare.textContent = Math.round(currShare*100)+'%';
+      const delta = (baseShare != null) ? Math.round((currShare-baseShare)*100) : null;
+      officeMeta.textContent = delta==null? 'vs DOW baseline' : (delta===0? 'at baseline' : (delta>0? `↑ +${delta}% vs baseline` : `↓ ${Math.abs(delta)}% vs baseline`));
+    }
+
+    // Week-over-week arrows (hours, parcels, letters)
+    const startW=today.startOf('week'); const lastStart=startW.minus({weeks:1}); const lastEnd=startW.minus({days:1});
+    const inRange=(r,from,to)=>{ const d=DateTime.fromISO(r.work_date); return d>=from && d<=to; };
+    const thisW=rows.filter(r=> r.status!=='off' && inRange(r,startW,today));
+    const lastW=rows.filter(r=> r.status!=='off' && inRange(r,lastStart,lastEnd));
+
+    const sum=(arr,fn)=>arr.reduce((t,x)=>t+(fn(x)||0),0);
+    const hThis=sum(thisW,r=>Number(r.hours||0));
+    const hLast=sum(lastW,r=>Number(r.hours||0));
+    const pThis=sum(thisW,r=>Number(r.parcels||0));
+    const pLast=sum(lastW,r=>Number(r.parcels||0));
+    const lThis=sum(thisW,r=>Number(r.letters||0));
+    const lLast=sum(lastW,r=>Number(r.letters||0));
+
+    const dh=pct(hThis,hLast), dp=pct(pThis,pLast), dl=pct(lThis,lLast);
+    const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
+
+    $('wkHours').textContent   = (hThis||0).toFixed(2);
+    $('wkParcels').textContent = (pThis||0).toString();
+    $('wkLetters').textContent = (lThis||0).toString();
+
+    const wh=$('wkHoursDelta'), wp=$('wkParcelsDelta'), wl=$('wkLettersDelta');
+    wh.textContent=fmt(dh);  wp.textContent=fmt(dp);  wl.textContent=fmt(dl);
+    wh.className='pill '+(dh==null?'':dh>=0?'up':'down');
+    wp.className='pill '+(dp==null?'':dp>=0?'up':'down');
+    wl.className='pill '+(dl==null?'':dl>=0?'up':'down');
+  }
+
+  // Realtime
+  try{
+    sb.channel('entries-feed')
+      .on('postgres_changes',{event:'*',schema:'public',table:'entries'}, async ()=>{
+        const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows);
+      })
+      .subscribe();
+  }catch(e){ console.warn('Realtime not enabled:', e?.message||e); }
+
+  // Table
   function renderTable(rows){
     const tbody=document.querySelector('#tbl tbody'); tbody.innerHTML='';
     const byDow=Array.from({length:7},()=>[]);
@@ -382,153 +507,6 @@
     a.download='route-stats.csv';
     a.click();
   });
-
-  // Charts
-let dowChart, parcelsChart, lettersChart;
-function destroyCharts(){ [dowChart,parcelsChart,lettersChart].forEach(c=>c&&c.destroy()); }
-
-function buildCharts(rows){
-  destroyCharts();
-  const workRows = rows.filter(r=>r.status!=='off');
-
-  // DOW Averages (total hours)
-  const byDow=Array.from({length:7},()=>({h:0,c:0}));
-  for(const r of workRows){
-    const h=Number(r.hours||0);
-    if(h>0){ const dow=new Date(r.work_date).getDay(); byDow[dow].h+=h; byDow[dow].c++; }
-  }
-  const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const dowData=byDow.map(x=> x.c? +(x.h/x.c).toFixed(2):0);
-  dowChart=new Chart(document.getElementById('dowChart'),{
-    type:'bar',
-    data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData}]},
-    options:{responsive:true,plugins:{legend:{display:false}}}
-  });
-
-  // Time series labels
-  const sorted=[...rows].sort((a,b)=>a.work_date.localeCompare(b.work_date));
-  const labels=sorted.map(r=>r.work_date);
-
-  // Separate series
-  const parcelsSeries = sorted.map(r=> Number(r.parcels||0));
-  const lettersSeries = sorted.map(r=> Number(r.letters||0));
-
-  parcelsChart=new Chart(document.getElementById('parcelsChart'),{
-    type:'line',
-    data:{labels,datasets:[{label:'Parcels',data:parcelsSeries}]},
-    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}
-  });
-
-  lettersChart=new Chart(document.getElementById('lettersChart'),{
-    type:'line',
-    data:{labels,datasets:[{label:'Letters',data:lettersSeries}]},
-    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}
-  });
-}
-
-    const sorted=[...rows].sort((a,b)=>a.work_date.localeCompare(b.work_date));
-    const volData=sorted.map(r=> (Number(r.parcels||0)+Number(r.letters||0)) );
-    volChart=new Chart(document.getElementById('volChart'),{
-      type:'line',
-      data:{labels:sorted.map(r=>r.work_date),datasets:[{label:'Parcels+Letters',data:volData}]},
-      options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}
-    });
-  }
-
-  // Snapshot cards
-  function pct(a,b){ if(!b) return null; return ((a-b)/b)*100; }
-  function hhmmFrom(baseDateStr, hours){ if(hours==null) return '—'; const d=DateTime.fromISO(baseDateStr).set({hour:8,minute:0}); return d.plus({hours}).toFormat('h:mm a'); }
-  function buildSnapshot(rows){
-    const today=DateTime.now(); const dow=today.weekday%7; const workRows=rows.filter(r=>r.status!=='off');
-    const byDow=Array.from({length:7},()=>({h:0,c:0, offShare:[] }));
-    for(const r of workRows){
-      const h=Number(r.hours||0);
-      if(h>0){
-        const d=new Date(r.work_date).getDay();
-        byDow[d].h+=h; byDow[d].c++;
-        const off=Number(r.office_minutes||0);
-        const rt=Number(r.route_minutes||0);
-        const tot=off+rt;
-        if(tot>0) byDow[d].offShare.push(off/tot);
-      // Week-over-week arrows
-const startW = today.startOf('week');
-const lastStart = startW.minus({ weeks: 1 });
-const lastEnd = startW.minus({ days: 1 });
-
-const inRange = (r, from, to) => {
-  const d = DateTime.fromISO(r.work_date);
-  return d >= from && d <= to;
-};
-
-const thisW = workRows.filter(r => inRange(r, startW, today));
-const lastW = workRows.filter(r => inRange(r, lastStart, lastEnd));
-
-const sum = (arr, fn) => arr.reduce((t, x) => t + (fn(x) || 0), 0);
-
-const hThis = sum(thisW, r => Number(r.hours || 0));
-const hLast = sum(lastW, r => Number(r.hours || 0));
-
-const vThis = sum(thisW, r => Number(r.parcels || 0) + Number(r.letters || 0));
-const vLast = sum(lastW, r => Number(r.parcels || 0) + Number(r.letters || 0));
-
-const pct = (a, b) => (!b ? null : ((a - b) / b) * 100);
-const dh = pct(hThis, hLast), dv = pct(vThis, vLast);
-
-const fmt = p => p == null ? '—' : (p >= 0 ? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-
-$('wkHours').textContent = (hThis || 0).toFixed(2);
-$('wkVol').textContent = (vThis || 0).toString();
-
-const wh = $('wkHoursDelta'), wv = $('wkVolDelta');
-wh.textContent = fmt(dh);
-wv.textContent = fmt(dv);
-
-wh.className = 'pill ' + (dh == null ? '' : dh >= 0 ? 'up' : 'down');
-wv.className = 'pill ' + (dv == null ? '' : dv >= 0 ? 'up' : 'down');
-      }
-    }
-    const avgH=byDow.map(x=> x.c? x.h/x.c : null);
-    const avgOffShare=byDow.map(x=> x.offShare.length? (x.offShare.reduce((a,b)=>a+b,0)/x.offShare.length) : null);
-
-    const todayAvgH=avgH[dow]; expEnd.textContent = todayAvgH? hhmmFrom(today.toISODate(), todayAvgH) : '—';
-    expMeta.textContent = `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} avg ${todayAvgH? todayAvgH.toFixed(2)+'h':'—'}`;
-
-    const d=date.value; const s=start.value||'08:00';
-    const off=diffHours(d,s,departTime.value)||0;
-    const rte=diffHours(d,departTime.value,end.value)||0;
-    const currShare = (off+rte)>0? off/(off+rte) : null;
-    const baseShare = avgOffShare[dow];
-    officeShare.textContent = currShare!=null? Math.round(currShare*100)+'%' : (baseShare!=null? Math.round(baseShare*100)+'%':'—');
-    const delta = (currShare!=null && baseShare!=null)? Math.round((currShare-baseShare)*100) : null;
-    officeMeta.textContent = delta==null? 'vs DOW baseline' : (delta===0? 'at baseline' : (delta>0? `↑ +${delta}% vs baseline` : `↓ ${Math.abs(delta)}% vs baseline`));
-
-    const startW=today.startOf('week'); const lastStart=startW.minus({weeks:1}); const lastEnd=startW.minus({days:1});
-    const inRange=(r,from,to)=>{ const d=DateTime.fromISO(r.work_date); return d>=from && d<=to; };
-    const thisW=workRows.filter(r=> inRange(r,startW,today));
-    const lastW=workRows.filter(r=> inRange(r,lastStart,lastEnd));
-    const sum=(arr,fn)=>arr.reduce((t,x)=>t+(fn(x)||0),0);
-    const hThis=sum(thisW,r=>Number(r.hours||0));
-    const hLast=sum(lastW,r=>Number(r.hours||0));
-    const vThis=sum(thisW,r=>Number(r.parcels||0)+Number(r.letters||0));
-    const vLast=sum(lastW,r=>Number(r.parcels||0)+Number(r.letters||0));
-    const dh=pct(hThis,hLast), dv=pct(vThis,vLast);
-    const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-    $('wkHours').textContent = (hThis||0).toFixed(2);
-    $('wkVol').textContent = (vThis||0).toString();
-    const wh=$('wkHoursDelta'), wv=$('wkVolDelta');
-    wh.textContent=fmt(dh); wv.textContent=fmt(dv);
-    wh.className='pill '+(dh==null?'':dh>=0?'up':'down');
-    wv.className='pill '+(dv==null?'':dv>=0?'up':'down');
-  }
-
-  // Realtime
-  try{
-    sb.channel('entries-feed')
-      .on('postgres_changes',{event:'*',schema:'public',table:'entries'}, async ()=>{
-        const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows);
-      })
-      .subscribe();
-  }catch(e){ console.warn('Realtime not enabled:', e?.message||e); }
 
   // FAB focus
   $('fab').addEventListener('click',()=>{ window.scrollTo({ top:0, behavior:'smooth' }); $('departTime').focus(); });
