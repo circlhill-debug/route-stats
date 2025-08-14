@@ -200,13 +200,17 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // ==== YOUR SUPABASE VALUES (PUT YOURS HERE) ====
-  const SUPABASE_URL  = 'https://YOUR-REF.supabase.co';
-  const SUPABASE_ANON = 'YOUR-ANON-KEY';
-  // ===============================================
-
-  // ---- Timezone (DST-aware) ----
+  // ==== YOUR SUPABASE VALUES (left intact per your request) ====
+  const SUPABASE_URL  = 'https://ouwkdtiixkaydrtfdhnh.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91d2tkdGlpeGtheWRydGZkaG5oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUwMDc0NDksImV4cCI6MjA3MDU4MzQ0OX0.KI-dYG5_A8jvPEHSog3wlnLbIGYIHQR_4ztXHL2SzIg';
+  // Timezone (DST-safe)
   const ZONE = "America/Detroit";
+
+  // === DOW helper (fixes Monday showing as Sunday) ===
+  function dowIndex(dateStr){
+    // Parse DATE (yyyy-MM-dd) in local zone, map Mon..Sun (1..7) to 0..6 with 0=Sun
+    return luxon.DateTime.fromFormat(dateStr, 'yyyy-MM-dd', { zone: ZONE }).weekday % 7;
+  }
 
   // Supabase + helpers
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true } });
@@ -246,9 +250,9 @@
   const badgeVolume=$('badgeVolume'), badgeRouteEff=$('badgeRouteEff'), badgeOverall=$('badgeOverall');
 
   // Tooltips
-  badgeVolume.title   = 'Volume = parcels + 0.33×letters vs your recent history (0–10)';
+  badgeVolume.title   = 'Volume = parcels + 0.33×letters (ranked vs recent, 0–10)';
   badgeRouteEff.title = 'Route Efficiency = today’s street hours vs typical for this weekday (0–10)';
-  badgeOverall.title  = 'Overall = total hours (office+route) vs expected (weekday avg early on)';
+  badgeOverall.title  = 'Overall = total hours (office+route) vs expected (weekday avg)';
 
   // TZ-safe helpers
   function todayStr(){ return DateTime.now().setZone(ZONE).toISODate(); }
@@ -443,7 +447,7 @@
     rows.forEach(r=>{
       if(r.status==='off') return;
       const h=Number(r.hours||0);
-      const dow = DateTime.fromISO(r.work_date,{zone:ZONE}).weekday % 7; // 0..6 Sun..Sat
+      const dow = dowIndex(r.work_date);
       if(h>0) byDow[dow].push(h);
     });
     const avgByDow=byDow.map(list=> list.length? (list.reduce((a,b)=>a+b,0)/list.length) : null);
@@ -452,7 +456,7 @@
       const tot=Number(r.hours||0)||null;
       const offH=(r.office_minutes!=null)? Number(r.office_minutes).toFixed(2):'';
       const rteH=(r.route_minutes!=null)? Number(r.route_minutes).toFixed(2):'';
-      const dow = DateTime.fromISO(r.work_date,{zone:ZONE}).weekday % 7;
+      const dow = dowIndex(r.work_date);
       const avg=avgByDow[dow];
       const cls=classifyRow(tot,avg);
 
@@ -485,12 +489,12 @@
     destroyCharts();
     const workRows=rows.filter(r=>r.status!=='off');
 
-    // DOW averages (total hours) — Luxon + local zone for DOW
+    // DOW averages (total hours) — use helper for TZ-safe DOW
     const byDow=Array.from({length:7},()=>({h:0,c:0}));
     for(const r of workRows){
       const h=Number(r.hours||0);
       if(h>0){
-        const dow = DateTime.fromISO(r.work_date,{zone:ZONE}).weekday % 7; // 0..6
+        const dow = dowIndex(r.work_date); // 0..6
         byDow[dow].h+=h; byDow[dow].c++;
       }
     }
@@ -498,7 +502,7 @@
     const dowData=byDow.map(x=> x.c? +(x.h/x.c).toFixed(2):0);
     dowChart=new Chart(document.getElementById('dowChart'),{type:'bar',data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData}]},options:{responsive:true,plugins:{legend:{display:false}}}});
 
-    // Time series labels (just use stored local ISO date)
+    // Time series labels (use stored local ISO date)
     const sorted=[...rows].sort((a,b)=> a.work_date.localeCompare(b.work_date));
     const labels=sorted.map(r=> r.work_date);
 
@@ -514,7 +518,7 @@
       options:{ responsive:true, plugins:{ legend:{ display:false }}, scales:{x:{ticks:{maxTicksLimit:8}}}}});
   }
 
-  // Snapshot & badges (also TZ-safe for DOW + week math)
+  // Snapshot & badges
   function pct(a,b){ if(!b) return null; return ((a-b)/b)*100; }
   function hhmmFrom(baseDateStr, hours){ if(hours==null) return '—'; const d=DateTime.fromISO(baseDateStr,{zone:ZONE}).set({hour:8,minute:0}); return d.plus({hours}).toFormat('h:mm a'); }
   function startOfWeekSunday(dt){ const shift = dt.weekday % 7; return dt.startOf('day').minus({ days: shift }); }
@@ -529,7 +533,7 @@
     for(const r of workRows){
       const h=Number(r.hours||0);
       if(h>0){
-        const d=DateTime.fromISO(r.work_date,{zone:ZONE}).weekday % 7;
+        const d=dowIndex(r.work_date);
         byDow[d].h+=h; byDow[d].c++;
         const off=Number(r.office_minutes||0); const rt=Number(r.route_minutes||0); const tot=off+rt; if(tot>0) byDow[d].offShare.push(off/tot);
       }
@@ -549,7 +553,7 @@
     badgeVolume.textContent = `${volScore}/10`;
 
     // Route efficiency vs same-DOW baseline
-    const rhs = workRows.filter(r=> DateTime.fromISO(r.work_date,{zone:ZONE}).weekday%7===dow)
+    const rhs = workRows.filter(r=> dowIndex(r.work_date)===dow)
                         .map(r=> +r.route_minutes||0).filter(n=>n>0);
     const rteAvg = rhs.length? (rhs.reduce((a,b)=>a+b,0)/rhs.length) : null;
     const todayRoute = rows[0]? (+rows[0].route_minutes||0) : null;
@@ -570,9 +574,12 @@
     const thisW=workRows.filter(r=> inRange(r,startW,today));
     const lastW=workRows.filter(r=> inRange(r,lastStart,lastEnd));
     const sum=(arr,fn)=>arr.reduce((t,x)=>t+(fn(x)||0),0);
-    const hThis=sum(thisW,r=>Number(r.hours||0)); const hLast=sum(lastW,r=>Number(r.hours||0));
-    const pThis=sum(thisW,r=>Number(r.parcels||0)); const pLast=sum(lastW,r=>Number(r.parcels||0));
-    const lThis=sum(thisW,r=>Number(r.letters||0)); const lLast=sum(lastW,r=>Number(r.letters||0));
+    const hThis=sum(thisW,r=>Number(r.hours||0));
+    const hLast=sum(lastW,r=>Number(r.hours||0));
+    const pThis=sum(thisW,r=>Number(r.parcels||0));
+    const pLast=sum(lastW,r=>Number(r.parcels||0));
+    const lThis=sum(thisW,r=>Number(r.letters||0));
+    const lLast=sum(lastW,r=>Number(r.letters||0));
     const dh=pct(hThis,hLast), dp=pct(pThis,pLast), dl=pct(lThis,lLast);
     const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
     $('wkHours').textContent = (hThis||0).toFixed(2);
@@ -599,6 +606,9 @@
     await loadByDate();
     const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown();
   })();
+
+  // Hard-refresh tip for you, Dave:
+  // After deploy, if charts look cached, refresh with ?v=2 or Cmd–Shift–R
 </script>
 </body>
 </html>
