@@ -6,8 +6,8 @@
 <title>Route Stats — Live Dashboard</title>
 <style>
   :root{
-    --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#9aa0aa;
-    --brand:#2b7fff; --good:#7CE38B; --warn:#FFD27A; --bad:#FF8FA1; --orange:#ff8a00; --blue:#2b7fff; --yellow:#ffd54a
+    --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#9aa0aa; --brand:#2b7fff;
+    --good:#7CE38B; --warn:#FFD27A; --bad:#FF8FA1; --accent:#2b7fff
   }
   *{box-sizing:border-box}
   body{ margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Inter,Segoe UI,Roboto,Arial,sans-serif }
@@ -38,13 +38,6 @@
   tr.typical td{ background:linear-gradient(90deg, rgba(255,210,122,.08), transparent) }
   .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center }
   dialog{ background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:12px; padding:16px }
-  .badge{ display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 8px; border-radius:999px; border:1px solid var(--border) }
-  .badge.ml{ background:rgba(124,227,139,.08); color:var(--good) }
-  .badge.dow{ background:rgba(43,127,255,.10); color:var(--brand) }
-  .badge.low{ background:rgba(255,143,161,.10); color:var(--bad) }
-  .badge.med{ background:rgba(255,210,122,.12); color:var(--warn) }
-  .badge.high{ background:rgba(124,227,139,.12); color:var(--good) }
-  .badge.gray{ background:rgba(154,160,170,.14); color:var(--muted) }
 </style>
 </head>
 <body>
@@ -65,25 +58,39 @@
     <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
       <div class="row" style="gap:8px;align-items:stretch">
         <div class="stat">
-          <small>
-            Expected End (today)
-            <span id="modeBadge" class="badge dow">DOW avg</span>
-            <span id="confBadge" class="badge gray">—</span>
-          </small>
+          <small>Expected End (today)</small>
           <strong id="expEnd" style="font-size:20px">—</strong>
           <small id="expMeta" style="color:var(--muted)">DOW avg —</small>
-          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">
-            <span id="badgeVolume" class="badge gray" title="Percentile of today's volume vs recent history">Volume —</span>
-            <span id="badgeRouteEff" class="badge gray" title="Route hours vs same-DOW baseline">Route Eff —</span>
-            <span id="badgeOverall" class="badge gray" title="Total hours vs ML/DOW expected">Overall —</span>
-          </div>
         </div>
-        <div class="stat"><small>Office Share</small><strong id="officeShare" style="font-size:20px">—</strong><small id="officeMeta" style="color:var(--muted)">vs DOW baseline</small></div>
+        <div class="stat">
+          <small>Volume</small>
+          <strong id="badgeVolume" style="font-size:20px">—</strong>
+          <small class="muted">parcels + 0.33×letters</small>
+        </div>
+        <div class="stat">
+          <small>Route Eff.</small>
+          <strong id="badgeRouteEff" style="font-size:20px">—</strong>
+          <small class="muted">vs weekday baseline</small>
+        </div>
+        <div class="stat">
+          <small>Overall</small>
+          <strong id="badgeOverall" style="font-size:20px">—</strong>
+          <small class="muted">office + route vs expected</small>
+        </div>
       </div>
       <div class="row" style="gap:8px;align-items:stretch">
-        <div class="stat"><small>Hours (week)</small><div><strong id="wkHours">—</strong> <span id="wkHoursDelta" class="pill">—</span></div></div>
-        <div class="stat"><small>Parcels (week)</small><div><strong id="wkParcels">—</strong> <span id="wkParcelsDelta" class="pill">—</span></div></div>
-        <div class="stat"><small>Letters (week)</small><div><strong id="wkLetters">—</strong> <span id="wkLettersDelta" class="pill">—</span></div></div>
+        <div class="stat">
+          <small>Hours (week)</small>
+          <div><strong id="wkHours">—</strong> <span id="wkHoursDelta" class="pill">—</span></div>
+        </div>
+        <div class="stat">
+          <small>Parcels (week)</small>
+          <div><strong id="wkParcels">—</strong> <span id="wkParcelsDelta" class="pill">—</span></div>
+        </div>
+        <div class="stat">
+          <small>Letters (week)</small>
+          <div><strong id="wkLetters">—</strong> <span id="wkLettersDelta" class="pill">—</span></div>
+        </div>
       </div>
     </div>
   </section>
@@ -91,6 +98,7 @@
   <!-- FORM -->
   <section class="card">
     <h3 style="margin:0 0 8px 0">Add Entry</h3>
+
     <div class="row" style="margin:6px 0 10px 0">
       <button id="btnStartNow" class="ghost">Start (now)</button>
       <button id="btnStreetNow" class="ghost">Hit Street (now)</button>
@@ -99,7 +107,11 @@
 
     <div class="grid" style="grid-template-columns:repeat(2,1fr);gap:10px">
       <div><label>Date</label><input id="date" type="date"></div>
-      <div><label>Route</label><input id="route" type="text" placeholder="Primary / Aux / Amazon…"></div>
+
+      <div>
+        <label>Route</label>
+        <input id="route" type="text" value="R1" readonly>
+      </div>
 
       <div><label>Start (defaults 08:00)</label><div class="row"><input id="start" type="time" value="08:00"><button id="btnStartNow2" class="ghost">Now</button></div></div>
       <div><label>Hit Street</label><div class="row"><input id="departTime" type="time" placeholder="--:--"><button id="btnStreetNow2" class="ghost">Now</button></div></div>
@@ -111,26 +123,41 @@
       <div><label>Letters</label><input id="letters" type="number" min="0" value="0"></div>
       <div><label>Miles</label><input id="miles" type="number" step="0.1" min="0" value="0"></div>
 
-      <div><label>Weather</label>
-        <select id="weather">
+      <div>
+        <label>Weather</label>
+        <div class="row">
+          <select id="weather" style="min-width:160px">
+            <option value="">—</option>
+            <option>☀️ Sunny</option>
+            <option>⛅ Partly Cloudy</option>
+            <option>🌧️ Rain</option>
+            <option>❄️ Snow</option>
+            <option>💨 Windy</option>
+            <option>🌫️ Fog</option>
+            <option>Other</option>
+          </select>
+          <select id="temp" title="Temp (°F)" style="min-width:110px">
+            <option value="">Temp (°F)</option>
+            <option>20</option><option>25</option><option>30</option><option>35</option>
+            <option>40</option><option>45</option><option>50</option><option>55</option>
+            <option>60</option><option>65</option><option>70</option><option>75</option>
+            <option>80</option><option>85</option><option>90</option><option>95</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label>Box holders</label>
+        <select id="boxholders">
           <option value="">—</option>
-          <option>☀️ Sunny</option>
-          <option>⛅ Partly Cloudy</option>
-          <option>🌧️ Rain</option>
-          <option>❄️ Snow</option>
-          <option>💨 Windy</option>
-          <option>🌫️ Fog</option>
-          <option>Other</option>
+          <option>None</option>
+          <option>Light</option>
+          <option>Medium</option>
+          <option>Heavy</option>
         </select>
       </div>
 
-      <div><label>Mood</label>
-        <select id="mood">
-          <option value="">—</option><option>🔥 dialed in</option><option>🙂 good</option>
-          <option>😐 meh</option><option>🥵 cooked</option><option>🌧️ soggy</option><option>🛑 off</option>
-        </select>
-      </div>
-
+      <div><label>Mood</label><select id="mood"><option value="">—</option><option>🔥 dialed in</option><option>🙂 good</option><option>😐 meh</option><option>🥵 cooked</option><option>🌧️ soggy</option><option>🛑 off</option></select></div>
       <div style="grid-column:1/-1"><label>Notes</label><textarea id="notes" rows="2" placeholder="Anything notable…"></textarea></div>
 
       <div class="row" style="grid-column:1/-1;justify-content:space-between;align-items:center">
@@ -150,19 +177,14 @@
   <section class="card" style="grid-column:1/-1">
     <div class="row" style="justify-content:space-between"><h3 style="margin:0">Recent Entries</h3><button id="exportCsv" class="ghost">Export CSV</button></div>
     <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px">
-      <table id="tbl">
-        <thead><tr>
-          <th>Date</th><th>Route</th><th>Status</th>
-          <th class="right">Office (h)</th><th class="right">Route (h)</th><th class="right">Total (h)</th>
-          <th class="right">Parcels</th><th class="right">Letters</th><th class="right">Miles</th>
-          <th>Weather</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
+      <table id="tbl"><thead><tr>
+        <th>Date</th><th>Route</th><th>Status</th><th class="right">Office (h)</th><th class="right">Route (h)</th><th class="right">Total (h)</th><th class="right">Parcels</th><th class="right">Letters</th><th class="right">Miles</th><th>Weather</th>
+      </tr></thead><tbody></tbody></table>
     </div>
   </section>
 </main>
 
+<!-- Magic link dialog -->
 <dialog id="linkDlg">
   <form method="dialog" class="grid" style="min-width:320px;gap:10px">
     <h3 style="margin:0">Link devices</h3>
@@ -178,18 +200,15 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-  // ==== YOUR SUPABASE VALUES (keep yours intact if different) ====
+  // ==== YOUR SUPABASE VALUES (keep yours) ====
   const SUPABASE_URL  = 'https://ouwkdtiixkaydrtfdhnh.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91d2tkdGlpeGtheWRydGZkaG5oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUwMDc0NDksImV4cCI6MjA3MDU4MzQ0OX0.KI-dYG5_A8jvPEHSog3wlnLbIGYIHQR_4ztXHL2SzIg';
-  // ==============================================================
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91d2tkdGlpeGtheWRydGZkaG5oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTAwNzQ0OSwiZXhwIjoyMDcwNTgzNDQ5fQ.L4V_i6Qsn3F6pr3_32CpXTVQad_jF33KTTX-xwM1ITY';
+  // ===========================================
 
-  // ==== CONFIG ====
-  const CONFIG = {
-    alphaLetters: 0.33,        // weight of letters in Volume metric
-    autoAlpha: false,          // set true later to learn from history
-    minRowsForAutoAlpha: 60    // when auto, need at least this many rows
-  };
+  // ---- Timezone (DST-aware) ----
+  const ZONE = "America/Detroit";
 
+  // Supabase + helpers
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true } });
   const $ = id => document.getElementById(id);
   const DateTime = luxon.DateTime;
@@ -219,28 +238,34 @@
 
   // Elements
   const date=$('date'), route=$('route'), start=$('start'), end=$('end'), departTime=$('departTime'), returnTime=$('returnTime');
-  const parcels=$('parcels'), letters=$('letters'), miles=$('miles'), mood=$('mood'), notes=$('notes'), weather=$('weather');
+  const parcels=$('parcels'), letters=$('letters'), miles=$('miles'), mood=$('mood'), notes=$('notes');
+  const weather=$('weather'), temp=$('temp'), boxholders=$('boxholders');
   const offDay=$('offDay');
   const officeH=$('officeH'), routeH=$('routeH'), totalH=$('totalH');
-  const expEnd=$('expEnd'), expMeta=$('expMeta'), officeShare=$('officeShare'), officeMeta=$('officeMeta');
-  const modeBadge=$('modeBadge'), confBadge=$('confBadge');
-  const badgeVolume=$('Volume = parcels + 0.33×letters vs your recent history (0–10)'), badgeRouteEff=$('Route Efficiency = today’s street hours vs typical for this weekday (0–10)'), badgeOverall=$('Overall = total hours (office+route) vs expected (ML or weekday avg) (0–10)');
+  const expEnd=$('expEnd'), expMeta=$('expMeta');
+  const badgeVolume=$('badgeVolume'), badgeRouteEff=$('badgeRouteEff'), badgeOverall=$('badgeOverall');
 
-  function todayStr(){ return DateTime.now().toISODate(); }
+  // Tooltips
+  badgeVolume.title   = 'Volume = parcels + 0.33×letters vs your recent history (0–10)';
+  badgeRouteEff.title = 'Route Efficiency = today’s street hours vs typical for this weekday (0–10)';
+  badgeOverall.title  = 'Overall = total hours (office+route) vs expected (weekday avg early on)';
+
+  // TZ-safe helpers
+  function todayStr(){ return DateTime.now().setZone(ZONE).toISODate(); }
+  function hhmmNow(){ const d = DateTime.now().setZone(ZONE); return `${String(d.hour).padStart(2,'0')}:${String(d.minute).padStart(2,'0')}`; }
+  function diffHours(d, t1, t2){
+    if(!t1||!t2) return null;
+    const a = DateTime.fromISO(`${d}T${t1}`, { zone: ZONE });
+    const b = DateTime.fromISO(`${d}T${t2}`, { zone: ZONE });
+    let h = (b.toMillis()-a.toMillis())/3.6e6;
+    if (h < 0) h += 24;
+    return Math.round(h*100)/100;
+  }
+
+  // Defaults
   date.value = todayStr();
+  route.value = "R1";
 
-  function hhmmNow(){ const d=new Date(); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
-  $('btnStartNow').addEventListener('click',()=>{ const n=hhmmNow(); if(!start.value) start.value=n; computeBreakdown(); });
-  $('btnStreetNow').addEventListener('click',()=>{ const n=hhmmNow(); departTime.value=n; if(!start.value) start.value=n; computeBreakdown(); });
-  $('btnClockNow').addEventListener('click',()=>{ const n=hhmmNow(); end.value=n; computeBreakdown(); });
-  $('btnStartNow2').addEventListener('click',()=>{ start.value=hhmmNow(); computeBreakdown(); });
-  $('btnStreetNow2').addEventListener('click',()=>{ departTime.value=hhmmNow(); computeBreakdown(); });
-  $('btnReturnNow').addEventListener('click',()=>{ returnTime.value=hhmmNow(); computeBreakdown(); });
-  $('btnClockNow2').addEventListener('click',()=>{ end.value=hhmmNow(); computeBreakdown(); });
-
-  offDay.addEventListener('change', ()=>{ if(offDay.checked){ end.value=hhmmNow(); parcels.value=letters.value=miles.value=0; mood.value='🛑 off'; computeBreakdown(); }});
-
-  function diffHours(d, t1, t2){ if(!t1||!t2) return null; const a=DateTime.fromISO(`${d}T${t1}`), b=DateTime.fromISO(`${d}T${t2}`); let h=(b.toMillis()-a.toMillis())/3.6e6; if(h<0) h+=24; return Math.round(h*100)/100; }
   function computeBreakdown(){
     if (offDay.checked){ officeH.textContent='0.00'; routeH.textContent='0.00'; totalH.textContent='0.00'; return 0; }
     const d=date.value; const s=start.value||'08:00';
@@ -252,44 +277,62 @@
     totalH.textContent  = (off!=null||rte!=null)? tot.toFixed(2) : '—';
     return tot;
   }
-  ;[date,start,departTime,returnTime,end,parcels,letters,miles,offDay,weather].forEach(el=> el.addEventListener('input', computeBreakdown));
 
-  // ===== Edit-by-Date (prefill + update-or-insert) =====
+  // Quick buttons
+  function setNow(el){ el.value=hhmmNow(); computeBreakdown(); }
+  $('btnStartNow').addEventListener('click',()=>{ if(!start.value) setNow(start); });
+  $('btnStreetNow').addEventListener('click',()=> setNow(departTime));
+  $('btnClockNow').addEventListener('click',()=> setNow(end));
+  $('btnStartNow2').addEventListener('click',()=> setNow(start));
+  $('btnStreetNow2').addEventListener('click',()=> setNow(departTime));
+  $('btnReturnNow').addEventListener('click',()=> setNow(returnTime));
+  $('btnClockNow2').addEventListener('click',()=> setNow(end));
+
+  // Off day UX
+  offDay.addEventListener('change', ()=>{ if(offDay.checked){ end.value=hhmmNow(); parcels.value=letters.value=miles.value=0; mood.value='🛑 off'; computeBreakdown(); }});
+
+  ;[date,start,departTime,returnTime,end,parcels,letters,miles,offDay,weather,temp,boxholders]
+    .forEach(el=> el.addEventListener('input', computeBreakdown));
+
+  // Data plumbing
+  function weatherString(){
+    const parts=[];
+    if (weather?.value) parts.push(weather.value);
+    if (temp?.value) parts.push(`${temp.value}°F`);
+    if (boxholders?.value) parts.push(`Box: ${boxholders.value}`);
+    return parts.length? parts.join(' · ') : null;
+  }
+
   function collectPayload(userId){
     const d = date.value;
     const s = start.value || '08:00';
-    const diff = (t1,t2)=> {
-      if(!t1 || !t2) return null;
-      const a = DateTime.fromISO(`${d}T${t1}`);
-      const b = DateTime.fromISO(`${d}T${t2}`);
-      let h = (b.toMillis()-a.toMillis())/3.6e6; if (h < 0) h += 24; return Math.round(h*100)/100;
-    };
-    const off = diff(s, departTime.value);
-    const rte = diff(departTime.value, end.value);
+    const off = diffHours(d, s, departTime.value);
+    const rte = diffHours(d, departTime.value, end.value);
     const tot = offDay.checked ? 0 : ((off??0)+(rte??0));
     return {
-      user_id:        userId,
-      work_date:      d,
-      route:          route.value || null,
-      start_time:     offDay.checked ? null : (s || null),
-      end_time:       offDay.checked ? null : (end.value || null),
-      hours:          offDay.checked ? 0 : (tot || null),
-      parcels:        offDay.checked ? 0 : (+parcels.value||0),
-      letters:        offDay.checked ? 0 : (+letters.value||0),
-      miles:          offDay.checked ? 0 : (+miles.value||0),
-      mood:           offDay.checked ? '🛑 off' : (mood.value||null),
-      notes:          notes.value || null,
-      status:         offDay.checked ? 'off' : 'worked',
-      office_start:   s || null,
-      depart_time:    departTime.value || null,
-      return_time:    returnTime.value || null,
-      office_minutes: off!=null ? off.toFixed(2) : null,
-      route_minutes:  rte!=null ? rte.toFixed(2) : null,
-      weather_json:   weather.value || null
+      user_id:      userId,
+      work_date:    d,                 // local (no UTC shift)
+      route:        "R1",
+      start_time:   offDay.checked ? null : (s||null),
+      end_time:     offDay.checked ? null : (end.value||null),
+      hours:        offDay.checked ? 0 : (tot||null),
+      parcels:      offDay.checked ? 0 : (+parcels.value||0),
+      letters:      offDay.checked ? 0 : (+letters.value||0),
+      miles:        offDay.checked ? 0 : (+miles.value||0),
+      mood:         offDay.checked ? '🛑 off' : (mood.value||null),
+      notes:        notes.value||null,
+      status:       offDay.checked ? 'off' : 'worked',
+      office_start: s||null,
+      depart_time:  departTime.value||null,
+      return_time:  returnTime.value||null,
+      office_minutes: off!=null? (off).toFixed(2) : null,
+      route_minutes:  rte!=null? (rte).toFixed(2) : null,
+      weather_json: weatherString()
     };
   }
+
   function fillForm(r){
-    route.value       = r.route || '';
+    // route is fixed to R1 visually; ignore r.route
     start.value       = r.start_time || '08:00';
     end.value         = r.end_time   || '';
     departTime.value  = r.depart_time || '';
@@ -299,66 +342,90 @@
     miles.value       = r.miles   || 0;
     mood.value        = r.mood    || '';
     notes.value       = r.notes   || '';
-    weather.value     = r.weather_json || '';
     offDay.checked    = (r.status === 'off');
-    try { computeBreakdown(); } catch(_) {}
+
+    // parse weather combo
+    const raw = r.weather_json || '';
+    if (!raw){ if(temp) temp.value=''; if(boxholders) boxholders.value=''; weather.value=''; }
+    else {
+      const parts = String(raw).split('·').map(s=>s.trim());
+      let w='', t='', b='';
+      for (const p of parts){
+        if (/°F$/.test(p)) t = p.replace('°F','').trim();
+        else if (/^Box:/i.test(p)) b = p.split(':').slice(1).join(':').trim();
+        else w = p;
+      }
+      weather.value = w || '';
+      if (temp) temp.value = t || '';
+      if (boxholders) boxholders.value = b || '';
+    }
+
+    try { computeBreakdown(); } catch(_){}
   }
-  let editingKey = null;
+
+  let editingKey = null; // { user_id, work_date }
+
   async function loadByDate(){
-    editingKey = null; const { data:{ user } } = await sb.auth.getUser(); if (!user) return; const d = date.value; if (!d) return;
-    const { data, error } = await sb.from('entries').select('*').eq('user_id', user.id).eq('work_date', d).limit(1).maybeSingle();
+    editingKey = null;
+    const { data:{ user } } = await sb.auth.getUser();
+    if (!user) return;
+    const d = date.value;
+    if (!d) return;
+
+    const { data, error } = await sb
+      .from('entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('work_date', d)
+      .limit(1)
+      .maybeSingle();
+
     if (error && error.code !== 'PGRST116') { console.error(error); return; }
-    const saveBtn = document.getElementById('save');
-    if (data) { editingKey = { user_id: user.id, work_date: d }; fillForm(data); saveBtn.textContent = 'Update'; saveBtn.classList.add('ghost'); }
-    else { saveBtn.textContent = 'Save'; saveBtn.classList.remove('ghost'); }
+
+    const saveBtn = $('save');
+    if (data) {
+      editingKey = { user_id: user.id, work_date: d };
+      fillForm(data);
+      saveBtn.textContent = 'Update';
+      saveBtn.classList.remove('ghost'); // blue
+    } else {
+      saveBtn.textContent = 'Save';
+      saveBtn.classList.remove('ghost'); // blue
+    }
   }
+
   date.addEventListener('change', loadByDate);
+
+  // Replace Save handler (insert or update)
   (function replaceSave(){
-    const btn = document.getElementById('save'); const clone = btn.cloneNode(true); btn.parentNode.replaceChild(clone, btn);
+    const btn = $('save');
+    const clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+
     clone.addEventListener('click', async ()=>{
-      const { data:{ user } } = await sb.auth.getUser(); if (!user) { alert('No session. Try Link devices or refresh.'); return; }
+      const { data:{ user } } = await sb.auth.getUser();
+      if (!user) { alert('No session. Try Link devices or refresh.'); return; }
+
       const payload = collectPayload(user.id);
-      const { data: existing } = await sb.from('entries').select('user_id').eq('user_id', payload.user_id).eq('work_date', payload.work_date).limit(1).maybeSingle();
-      let error = null;
-      if (existing) ({ error } = await sb.from('entries').update(payload).eq('user_id', payload.user_id).eq('work_date', payload.work_date));
-      else ({ error } = await sb.from('entries').insert(payload));
-      dWrite.textContent = error ? 'Failed' : 'OK'; if (error) { alert(error.message); return; }
-      const rows = await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows);
-      editingKey = { user_id: user.id, work_date: date.value }; clone.textContent = 'Update'; clone.classList.add('ghost');
+      let error;
+      if (editingKey) {
+        ({ error } = await sb.from('entries').update(payload)
+          .eq('user_id', editingKey.user_id)
+          .eq('work_date', editingKey.work_date));
+      } else {
+        ({ error } = await sb.from('entries').insert(payload));
+      }
+      dWrite.textContent = error ? 'Failed' : 'OK';
+      if (error){ alert(error.message); return; }
+
+      const rows = await fetchEntries();
+      renderTable(rows); buildCharts(rows); buildSnapshot(rows);
+
+      editingKey = { user_id: user.id, work_date: date.value };
+      clone.textContent = 'Update';
+      clone.classList.remove('ghost'); // blue
     });
   })();
-
-  // ------- ML (parcels, letters -> total hours) -------
-  function fitTwoFactor(rows){
-    const data = rows.filter(r => r.status!=='off')
-                     .map(r => ({ p:Number(r.parcels||0), l:Number(r.letters||0), y:Number(r.hours||0) }))
-                     .filter(r => isFinite(r.p) && isFinite(r.l) && isFinite(r.y));
-    if (data.length < 8) return null;
-    let Sx0=data.length, Sp=0, Sl=0, Sy=0, Spp=0, Sll=0, Spl=0, Spy=0, Sly=0;
-    for(const r of data){ Sp+=r.p; Sl+=r.l; Sy+=r.y; Spp+=r.p*r.p; Sll+=r.l*r.l; Spl+=r.p*r.l; Spy+=r.p*r.y; Sly+=r.l*r.y; }
-    const lam=1e-6; const A=[[Sx0,Sp,Sl],[Sp,Spp+lam,Spl],[Sl,Spl,Sll+lam]]; const b=[Sy,Spy,Sly];
-    function det3(m){ return m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1]) - m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]); }
-    const dA=det3(A); if(Math.abs(dA)<1e-12) return null;
-    function solveCramer(i){ const M=A.map(r=>r.slice()); M[0][i]=b[0]; M[1][i]=b[1]; M[2][i]=b[2]; return det3(M)/dA; }
-    const b0=solveCramer(0), bP=solveCramer(1), bL=solveCramer(2);
-    const ybar=Sy/Sx0; let ssTot=0, ssRes=0; for(const r of data){ const yhat=b0+bP*r.p+bL*r.l; ssTot+=(r.y-ybar)**2; ssRes+=(r.y-yhat)**2; }
-    const R2=ssTot>0? 1-ssRes/ssTot : 0; return { b0,bP,bL,R2,n:data.length };
-  }
-  function predictHours(model, p, l){ if(!model) return null; const h = model.b0 + model.bP*Number(p||0) + model.bL*Number(l||0); return isFinite(h) ? Math.max(0,h) : null; }
-
-  // ------- Stats helpers (Volume, Efficiency, Performance) -------
-  function percentileRank(value, arr){ if(!arr.length) return 0.5; const sorted=[...arr].sort((a,b)=>a-b); let below=0; for(const x of sorted){ if(x<=value) below++; else break; } return below / sorted.length; }
-  function computeAlpha(rows){
-    if(!CONFIG.autoAlpha) return CONFIG.alphaLetters;
-    const model = fitTwoFactor(rows); if(!model || model.n < CONFIG.minRowsForAutoAlpha) return CONFIG.alphaLetters;
-    const est = model.bL/model.bP; if(!isFinite(est) || est<=0) return CONFIG.alphaLetters; return Math.max(0.05, Math.min(1.0, est));
-  }
-  function volumeValue(p,l,alpha){ return Number(p||0) + alpha*Number(l||0); }
-  function volumeIndex(p,l,histV,alpha){ const v=volumeValue(p,l,alpha); return Math.round(10 * percentileRank(v, histV)); }
-  function clamp01(x){ return Math.max(0,Math.min(1,x)); }
-  function score01_fromDelta(delta){ // +20% faster => 1.0, +20% slower => 0.0
-    const s = (0.2 - delta) / 0.4; return clamp01(s);
-  }
 
   // Fetch & render
   async function fetchEntries(){
@@ -366,115 +433,21 @@
     const { data, error } = await sb.from('entries').select('*').eq('user_id',user.id).order('work_date',{ascending:false}).limit(365);
     if(error){ console.error(error); return []; } return data;
   }
+
   function classifyRow(total, avg){ if(total==null||avg==null) return ''; const diff=(total-avg)/avg; if(diff<=-0.15) return 'light'; if(diff>=0.15) return 'heavy'; return 'typical'; }
 
-  // Charts
-  let dowChart, parcelsChart, lettersChart; function destroyCharts(){ [dowChart,parcelsChart,lettersChart].forEach(c=>c&&c.destroy()); }
-  function buildCharts(rows){
-    destroyCharts(); const workRows=rows.filter(r=>r.status!=='off');
-    const byDow=Array.from({length:7},()=>({h:0,c:0}));
-    for(const r of workRows){ const h=Number(r.hours||0); if(h>0){ const dow=new Date(r.work_date).getDay(); byDow[dow].h+=h; byDow[dow].c++; } }
-    const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const dowData=byDow.map(x=> x.c? +(x.h/x.c).toFixed(2):0);
-    dowChart=new Chart(document.getElementById('dowChart'),{type:'bar',data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData,backgroundColor:'rgba(43,127,255,0.35)',borderColor:'rgba(43,127,255,0.9)'}]},options:{responsive:true,plugins:{legend:{display:false}}}});
-    const sorted=[...rows].sort((a,b)=>a.work_date.localeCompare(b.work_date)); const labels=sorted.map(r=>r.work_date);
-    parcelsChart=new Chart(document.getElementById('parcelsChart'),{type:'line',data:{labels,datasets:[{label:'Parcels',data:sorted.map(r=>Number(r.parcels||0)),borderWidth:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}});
-    lettersChart=new Chart(document.getElementById('lettersChart'),{type:'line',data:{labels,datasets:[{label:'Letters',data:sorted.map(r=>Number(r.letters||0)),borderWidth:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:8}}}}});
-  }
-
-  // Snapshot + trend color
-  function pct(a,b){ if(!b) return null; return ((a-b)/b)*100; }
-  function hhmmFrom(baseDateStr, hours){ if(hours==null) return '—'; const d=DateTime.fromISO(baseDateStr).set({hour:8,minute:0}); return d.plus({hours}).toFormat('h:mm a'); }
-  function setBrandByTrend(dh,dp,dl){ const root=document.documentElement.style; const up = (p)=> p!=null && p>=5; const down=(p)=> p!=null && p<=-5; if (up(dp) || up(dl) || up(dh)) root.setProperty('--brand','var(--orange)'); else if (down(dp) || down(dl) || down(dh)) root.setProperty('--brand','var(--yellow)'); else root.setProperty('--brand','var(--blue)'); }
-  function setConfBadge(R2){ confBadge.textContent=''; confBadge.className='badge gray'; if(R2==null) return; const pct=Math.round(R2*100); let tier='low', label='Low conf'; if (pct>=70){ tier='high'; label='High conf'; } else if (pct>=40){ tier='med'; label='Med conf'; } confBadge.className=`badge ${tier}`; confBadge.textContent = `${label} • R²≈${pct}%`; }
-
-  function buildSnapshot(rows){
-    const today=DateTime.now(); const dow=today.weekday%7; const workRows=rows.filter(r=>r.status!=='off');
-    const byDowH=Array.from({length:7},()=>({h:0,c:0}));
-    const byDowRoute=Array.from({length:7},()=>({h:0,c:0}));
-    for(const r of workRows){
-      const tot=Number(r.hours||0); const off=Number(r.office_minutes||0); const rt=(r.route_minutes!=null? Number(r.route_minutes): (tot-off));
-      const d=new Date(r.work_date).getDay();
-      if(isFinite(tot) && tot>0){ byDowH[d].h+=tot; byDowH[d].c++; }
-      if(isFinite(rt) && rt>0){ byDowRoute[d].h+=rt; byDowRoute[d].c++; }
-    }
-    const avgTotByDow=byDowH.map(x=> x.c? x.h/x.c : null);
-    const avgRouteByDow=byDowRoute.map(x=> x.c? x.h/x.c : null);
-
-    // ML prediction for TOTAL hours
-    const model = fitTwoFactor(rows);
-    const pToday = Number(parcels.value || 0), lToday = Number(letters.value || 0);
-    const predH  = (model && (pToday>0 || lToday>0)) ? predictHours(model, pToday, lToday) : null;
-    if (predH != null) {
-      modeBadge.textContent = 'ML est'; modeBadge.className='badge ml'; setConfBadge(model.R2); expEnd.textContent = hhmmFrom(today.toISODate(), predH); const r2 = (model.R2*100).toFixed(0); expMeta.textContent = `βp=${model.bP.toFixed(2)} βl=${model.bL.toFixed(2)} • R²≈${r2}% • n=${model.n}`;
-    } else {
-      modeBadge.textContent = 'DOW avg'; modeBadge.className='badge dow'; setConfBadge(null); const todayAvgH=avgTotByDow[dow]; expEnd.textContent = todayAvgH? hhmmFrom(today.toISODate(), todayAvgH) : '—'; expMeta.textContent = `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} avg ${todayAvgH? todayAvgH.toFixed(2)+'h':'—'}`;
-    }
-
-    // Volume badge (percentile vs history)
-    const alpha = computeAlpha(rows);
-    const histV = rows.slice(0,60).map(r=> volumeValue(r.parcels, r.letters, alpha)); // last ~60 entries
-    const vIdx  = volumeIndex(pToday, lToday, histV, alpha);
-    badgeVolume.textContent = `Volume ${isNaN(vIdx)?'—':vIdx}/10`;
-
-    // Route efficiency badge (route hours vs DOW route baseline)
-    const dStr=date.value; const s=start.value||'08:00';
-    const offHNow = diffHours(dStr,s,departTime.value); const rteHNow = diffHours(dStr,departTime.value,end.value);
-    const routeBase = avgRouteByDow[dow];
-    if (rteHNow!=null && routeBase){ const delta=(rteHNow-routeBase)/routeBase; const score = Math.round(10*score01_fromDelta(delta)); badgeRouteEff.textContent=`Route Eff ${score}/10`; badgeRouteEff.className=`badge ${score>=7?'high':score>=4?'med':'low'}`; }
-    else { badgeRouteEff.textContent='Route Eff —'; badgeRouteEff.className='badge gray'; }
-
-    // Overall badge (TOTAL vs expected)
-    const totalNow = (offHNow??0) + (rteHNow??0);
-    const expected = (predH!=null)? predH : (avgTotByDow[dow]||null);
-    if (expected!=null && (offHNow!=null||rteHNow!=null)){
-      const u = totalNow/expected; const score = Math.round(10*clamp01((1.2 - u)/0.4));
-      badgeOverall.textContent = `Overall ${score}/10`;
-      badgeOverall.className = `badge ${score>=7?'high':score>=4?'med':'low'}`;
-    } else { badgeOverall.textContent='Overall —'; badgeOverall.className='badge gray'; }
-
-    // Week-over-week arrows + dynamic brand color
-    const startW=today.startOf('week'); const lastStart=startW.minus({weeks:1}); const lastEnd=startW.minus({days:1});
-    const inRange=(r,from,to)=>{ const d=DateTime.fromISO(r.work_date); return d>=from && d<=to; };
-    const thisW=rows.filter(r=> r.status!=='off' && inRange(r,startW,today));
-    const lastW=rows.filter(r=> r.status!=='off' && inRange(r,lastStart,lastEnd));
-    const sum=(arr,fn)=>arr.reduce((t,x)=>t+(fn(x)||0),0);
-    const hThis=sum(thisW,r=>Number(r.hours||0)); const hLast=sum(lastW,r=>Number(r.hours||0));
-    const pThis=sum(thisW,r=>Number(r.parcels||0)); const pLast=sum(lastW,r=>Number(r.parcels||0));
-    const lThis=sum(thisW,r=>Number(r.letters||0)); const lLast=sum(lastW,r=>Number(r.letters||0));
-    const dh=pct(hThis,hLast), dp=pct(pThis,pLast), dl=pct(lThis,lLast);
-    const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-    $('wkHours').textContent   = (hThis||0).toFixed(2);
-    $('wkParcels').textContent = (pThis||0).toString();
-    $('wkLetters').textContent = (lThis||0).toString();
-    const wh=$('wkHoursDelta'), wp=$('wkParcelsDelta'), wl=$('wkLettersDelta');
-    wh.textContent=fmt(dh); wp.textContent=fmt(dp); wl.textContent=fmt(dl);
-    wh.className='pill '+(dh==null?'':dh>=0?'up':'down');
-    wp.className='pill '+(dp==null?'':dp>=0?'up':'down');
-    wl.className='pill '+(dl==null?'':dl>=0?'up':'down');
-
-    setBrandByTrend(dh,dp,dl);
-    try{
-      const pc = dp!=null ? (dp>=0 ? 'rgba(255,138,0,0.9)' : 'rgba(43,127,255,0.9)') : 'rgba(43,127,255,0.9)';
-      const lc = dl!=null ? (dl>=0 ? 'rgba(255,138,0,0.9)' : 'rgba(43,127,255,0.9)') : 'rgba(43,127,255,0.9)';
-      parcelsChart.data.datasets[0].borderColor = pc; lettersChart.data.datasets[0].borderColor = lc; parcelsChart.update(); lettersChart.update();
-    }catch(_){}
-  }
-
-  // Realtime
-  try{ sb.channel('entries-feed').on('postgres_changes',{event:'*',schema:'public',table:'entries'}, async ()=>{ const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); }).subscribe(); }catch(e){ console.warn('Realtime not enabled:', e?.message||e); }
-
-  // Table
   function renderTable(rows){
     const tbody=document.querySelector('#tbl tbody'); tbody.innerHTML='';
     const byDow=Array.from({length:7},()=>[]);
     rows.forEach(r=>{ if(r.status==='off') return; const h=Number(r.hours||0); const dow=new Date(r.work_date).getDay(); if(h>0) byDow[dow].push(h); });
     const avgByDow=byDow.map(list=> list.length? (list.reduce((a,b)=>a+b,0)/list.length) : null);
     for(const r of rows){
-      const tot=Number(r.hours||0)||null; const dow=new Date(r.work_date).getDay(); const avg=avgByDow[dow]; const cls=classifyRow(tot,avg);
-      const offH=(r.office_minutes!=null)? Number(r.office_minutes).toFixed(2):''; const rteH=(r.route_minutes!=null)? Number(r.route_minutes).toFixed(2):'';
+      const tot=Number(r.hours||0)||null; const dow=new Date(r.work_date).getDay(); const avg=avgByDow[dow];
+      const cls=classifyRow(tot,avg);
+      const offH=(r.office_minutes!=null)? Number(r.office_minutes).toFixed(2):'';
+      const rteH=(r.route_minutes!=null)? Number(r.route_minutes).toFixed(2):'';
       const tr=document.createElement('tr'); if(cls) tr.classList.add(cls);
-      tr.innerHTML=`<td>${r.work_date}</td><td>${r.route||''}</td><td>${r.status||'worked'}</td>
+      tr.innerHTML = `<td>${r.work_date}</td><td>R1</td><td>${r.status||'worked'}</td>
         <td class="right">${offH}</td><td class="right">${rteH}</td><td class="right">${tot!=null? tot.toFixed(2):''}</td>
         <td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.miles||0}</td>
         <td>${r.weather_json||''}</td>`;
@@ -484,17 +457,134 @@
 
   // CSV export
   $('exportCsv').addEventListener('click', async ()=>{
-    const rows=await fetchEntries(); const headers=['work_date','route','status','start_time','depart_time','return_time','end_time','hours','office_minutes','route_minutes','parcels','letters','miles','weather_json','mood','notes','created_at'];
+    const rows=await fetchEntries();
+    const headers=['work_date','route','status','start_time','depart_time','return_time','end_time','hours','office_minutes','route_minutes','parcels','letters','miles','mood','notes','weather_json','created_at'];
     const lines=[headers.join(',')];
-    for(const r of rows){ const vals=headers.map(h=>{ const v=r[h]; if(v==null) return ''; const s=String(v).replace(/"/g,'""'); return /[",\n]/.test(s)? `"${s}"`: s;}); lines.push(vals.join(',')); }
+    for(const r of rows){
+      const vals=headers.map(h=>{const v=(h==='route')?'R1':r[h]; if(v==null) return ''; const s=String(v).replace(/"/g,'""'); return /[",\n]/.test(s)? `"${s}"`: s;});
+      lines.push(vals.join(','));
+    }
     const blob=new Blob([lines.join('\n')],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='route-stats.csv'; a.click();
   });
+
+  // Charts
+  let dowChart, parcelsChart, lettersChart;
+  function destroyCharts(){ [dowChart,parcelsChart,lettersChart].forEach(c=>c&&c.destroy()); }
+
+  function buildCharts(rows){
+    destroyCharts();
+    const workRows=rows.filter(r=>r.status!=='off');
+
+    // DOW averages (total hours)
+    const byDow=Array.from({length:7},()=>({h:0,c:0}));
+    for(const r of workRows){ const h=Number(r.hours||0); if(h>0){ const dow=new Date(r.work_date).getDay(); byDow[dow].h+=h; byDow[dow].c++; } }
+    const dowLabels=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dowData=byDow.map(x=> x.c? +(x.h/x.c).toFixed(2):0);
+    dowChart=new Chart(document.getElementById('dowChart'),{type:'bar',data:{labels:dowLabels,datasets:[{label:'Avg Total Hours',data:dowData}]},options:{responsive:true,plugins:{legend:{display:false}}}});
+
+    // Time series labels
+    const sorted=[...rows].sort((a,b)=> a.work_date.localeCompare(b.work_date));
+    const labels=sorted.map(r=> r.work_date);
+
+    parcelsChart=new Chart(document.getElementById('parcelsChart'),{
+      type:'line',
+      data:{ labels, datasets:[{ label:'Parcels', data: sorted.map(r=> +r.parcels||0) }] },
+      options:{ responsive:true, plugins:{ legend:{ display:false }}, scales:{x:{ticks:{maxTicksLimit:8}}}}
+    });
+
+    lettersChart=new Chart(document.getElementById('lettersChart'),{
+      type:'line',
+      data:{ labels, datasets:[{ label:'Letters', data: sorted.map(r=> +r.letters||0) }] },
+      options:{ responsive:true, plugins:{ legend:{ display:false }}, scales:{x:{ticks:{maxTicksLimit:8}}}}
+    });
+  }
+
+  // Snapshot & badges
+  function pct(a,b){ if(!b) return null; return ((a-b)/b)*100; }
+  function hhmmFrom(baseDateStr, hours){ if(hours==null) return '—'; const d=DateTime.fromISO(baseDateStr,{zone:ZONE}).set({hour:8,minute:0}); return d.plus({hours}).toFormat('h:mm a'); }
+
+  function startOfWeekSunday(dt){ const shift = dt.weekday % 7; return dt.startOf('day').minus({ days: shift }); }
+
+  function buildSnapshot(rows){
+    const today=DateTime.now().setZone(ZONE);
+    const dow=today.weekday%7;
+    const workRows=rows.filter(r=>r.status!=='off');
+
+    // Baselines by DOW for hours + office share
+    const byDow=Array.from({length:7},()=>({h:0,c:0, offShare:[] }));
+    for(const r of workRows){
+      const h=Number(r.hours||0); if(h>0){
+        const d=new Date(r.work_date).getDay(); byDow[d].h+=h; byDow[d].c++;
+        const off=Number(r.office_minutes||0); const rt=Number(r.route_minutes||0); const tot=off+rt; if(tot>0) byDow[d].offShare.push(off/tot);
+      }
+    }
+    const avgH=byDow.map(x=> x.c? x.h/x.c : null);
+    const todayAvgH=avgH[dow];
+    expEnd.textContent = todayAvgH? hhmmFrom(today.toISODate(), todayAvgH) : '—';
+    expMeta.textContent = `${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow]} avg ${todayAvgH? todayAvgH.toFixed(2)+'h':'—'}`;
+
+    // Badges
+    const lastN = rows.slice(0,30); // recent window
+    const volMetric = (r)=> (+r.parcels||0) + 0.33*(+r.letters||0);
+    const vols = lastN.map(volMetric);
+    const v = vols.length? volMetric(rows[0]||{}) : 0;
+    const rank = (arr,x)=> { const s=[...arr].sort((a,b)=>a-b); let i=s.findIndex(n=>x<=n); if(i<0) i=s.length; return i/s.length; };
+    const volScore = vols.length? Math.round(rank(vols,v)*10) : 0;
+    badgeVolume.textContent = `${volScore}/10`;
+
+    // Route efficiency vs same-DOW route baseline
+    const rhs = workRows.filter(r=> new Date(r.work_date).getDay()===dow ).map(r=> +r.route_minutes||0).filter(n=>n>0);
+    const rteAvg = rhs.length? (rhs.reduce((a,b)=>a+b,0)/rhs.length) : null;
+    const todayRoute = rows[0]? (+rows[0].route_minutes||0) : null;
+    const rteScore = (rteAvg && todayRoute!=null && rteAvg>0)? Math.max(0, Math.min(10, Math.round((1 - (todayRoute - rteAvg)/Math.max(1,rteAvg))*10))) : 0;
+    badgeRouteEff.textContent = `${rteScore}/10`;
+
+    // Overall vs expected (use DOW avg total early on)
+    const totToday = rows[0]? (+rows[0].hours||0) : 0;
+    const exp = todayAvgH || 0;
+    const overallScore = exp>0? Math.max(0, Math.min(10, Math.round((1 - (totToday - exp)/Math.max(1,exp))*10))) : 0;
+    badgeOverall.textContent = `${overallScore}/10`;
+
+    // Week-over-week tiles (hours, parcels, letters)
+    const startW = startOfWeekSunday(today);
+    const lastStart = startW.minus({weeks:1});
+    const lastEnd = startW.minus({days:1});
+    const inRange=(r,from,to)=>{ const d=DateTime.fromISO(r.work_date,{zone:ZONE}); return d>=from && d<=to; };
+    const thisW=workRows.filter(r=> inRange(r,startW,today));
+    const lastW=workRows.filter(r=> inRange(r,lastStart,lastEnd));
+    const sum=(arr,fn)=>arr.reduce((t,x)=>t+(fn(x)||0),0);
+    const hThis=sum(thisW,r=>Number(r.hours||0)); const hLast=sum(lastW,r=>Number(r.hours||0));
+    const pThis=sum(thisW,r=>Number(r.parcels||0)); const pLast=sum(lastW,r=>Number(r.parcels||0));
+    const lThis=sum(thisW,r=>Number(r.letters||0)); const lLast=sum(lastW,r=>Number(r.letters||0));
+    const dh=pct(hThis,hLast), dp=pct(pThis,pLast), dl=pct(lThis,lLast);
+    const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
+    $('wkHours').textContent = (hThis||0).toFixed(2);
+    $('wkParcels').textContent = (pThis||0).toString();
+    $('wkLetters').textContent = (lThis||0).toString();
+    const setPill=(el,delta)=>{ el.textContent=fmt(delta); el.className='pill '+(delta==null?'':delta>=0?'up':'down'); };
+    setPill($('wkHoursDelta'), dh); setPill($('wkParcelsDelta'), dp); setPill($('wkLettersDelta'), dl);
+
+    // Subtle theme hint by weekly hours trend
+    document.documentElement.style.setProperty('--brand', (dh==null? '#2b7fff' : dh>=10? '#ff9f43' : dh<=-10? '#ffd166' : '#2b7fff'));
+  }
+
+  // Realtime
+  try{
+    sb.channel('entries-feed')
+      .on('postgres_changes',{event:'*',schema:'public',table:'entries'}, async ()=>{
+        const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows);
+      }).subscribe();
+  }catch(e){ console.warn('Realtime not enabled:', e?.message||e); }
 
   // FAB focus
   $('fab').addEventListener('click',()=>{ window.scrollTo({ top:0, behavior:'smooth' }); $('departTime').focus(); });
 
   // Boot
-  (async()=>{ $('date').value=todayStr(); await loadByDate(); const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown(); })();
+  (async()=>{
+    $('date').value=todayStr();
+    await loadByDate();
+    const rows=await fetchEntries(); renderTable(rows); buildCharts(rows); buildSnapshot(rows); computeBreakdown();
+  })();
 </script>
 </body>
 </html>
