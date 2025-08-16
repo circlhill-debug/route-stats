@@ -1,3 +1,6 @@
+<div style="position:fixed;top:6px;right:12px;color:#9aa0aa;font-size:11px;z-index:9999;">
+  v2025-08-15-1
+</div>
 <!doctype html>
 <html lang="en">
 <head>
@@ -74,7 +77,14 @@
 </style>
 </head>
 <body>
-<div id="diag">ROUTE STATS · Supabase: <b id="dConn">…</b> · Auth: <b id="dAuth">…</b> · Write: <b id="dWrite">—</b></div>
+<div id="diag">
+  ROUTE STATS · Supabase: <b id="dConn">…</b> · Auth: <b id="dAuth">…</b> · Write: <b id="dWrite">—</b>
+</div>
+
+<!-- Version tag -->
+<div style="position:fixed;top:6px;right:12px;color:#9aa0aa;font-size:11px;z-index:9999;">
+  v2025-08-15-1
+</div>
 <header>
   <div class="wrap row" style="justify-content:space-between">
     <h1>📈 ROUTE STATS — Live Dashboard</h1>
@@ -218,6 +228,9 @@
         <input id="searchBox" type="search" placeholder="Search date, mood, weather, notes…" style="min-width:240px">
         <button id="exportCsv" class="ghost">Export CSV (All)</button>
         <button id="exportCsvFiltered" class="ghost">Export CSV (Filtered)</button>
+        <input id="importFile" type="file" accept=".csv,text/csv" style="display:none">
+        <button id="importCsv" class="ghost">Import CSV</button>
+        <button id="showUid" class="ghost" title="Show current user id">Show UID</button>
       </div>
     </div>
     <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px">
@@ -402,7 +415,7 @@
       work_date:    d,
       route:        "R1",
       start_time:   offDay.checked ? null : (s||null),
-      end_time:     end_time: offDay.checked ? null : (end.value || null),
+      end_time: offDay.checked ? null : (end.value || null),
       hours:        offDay.checked ? 0 : (tot||null),
       parcels:      offDay.checked ? 0 : (+parcels.value||0),
       letters:      offDay.checked ? 0 : (+letters.value||0),
@@ -663,6 +676,75 @@
     const rows = applySearch(allRows.length ? allRows : await fetchEntries());
     const blob=new Blob([toCsv(rows)],{type:'text/csv'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='route-stats-filtered.csv'; a.click();
+  });
+
+  // Show current Supabase user id (helps explain missing data if on a new anon session)
+  const showUidBtn = $('showUid');
+  showUidBtn?.addEventListener('click', async ()=>{
+    const { data:{ user } } = await sb.auth.getUser();
+    if (!user) { alert('No session. Use Link devices.'); return; }
+    alert(`Current user id (account key):\n${user.id}\n\nEntries are filtered by this id.`);
+  });
+
+  // CSV Import (restore from an old device/export)
+  const importFile = $('importFile');
+  $('importCsv')?.addEventListener('click', ()=> importFile.click());
+
+  importFile?.addEventListener('change', async ()=>{
+    const file = importFile.files?.[0];
+    if(!file){ return; }
+    const text = await file.text();
+
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if(lines.length < 2){ alert('CSV is empty'); return; }
+    const headers = lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+    const idx = (name)=> headers.indexOf(name);
+    const splitCsv = (row)=> row.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/);
+    const unquote = (v)=> (/^".*"$/.test(v)? v.slice(1,-1).replace(/""/g,'"') : v);
+
+    const { data:{ user } } = await sb.auth.getUser();
+    if(!user){ alert('No session. Use Link devices.'); return; }
+
+    const rows=[];
+    for(let i=1;i<lines.length;i++){
+      const cols = splitCsv(lines[i]);
+      const get = (name)=> unquote(cols[idx(name)] ?? '');
+      const r = {
+        user_id: user.id,
+        work_date:    get('work_date'),
+        route:        'R1',
+        status:       get('status') || 'worked',
+        start_time:   get('start_time') || null,
+        depart_time:  get('depart_time') || null,
+        return_time:  get('return_time') || null,
+        end_time:     get('end_time') || null,
+        hours:        +(get('hours')||0) || null,
+        office_minutes: get('office_minutes') || null,
+        route_minutes:  get('route_minutes') || null,
+        parcels:      +(get('parcels')||0) || 0,
+        letters:      +(get('letters')||0) || 0,
+        miles:        +(get('miles')||0) || 0,
+        mood:         get('mood') || null,
+        notes:        get('notes') || null,
+        weather_json: get('weather_json') || null
+      };
+      if(r.work_date) rows.push(r);
+    }
+
+    if(!rows.length){ alert('No rows detected'); return; }
+
+    // Insert in batches to avoid payload limits
+    const chunk = 200;
+    for(let i=0;i<rows.length;i+=chunk){
+      const slice = rows.slice(i, i+chunk);
+      const { error } = await sb.from('entries').insert(slice);
+      if(error){ alert('Import failed: '+error.message); return; }
+    }
+
+    const fresh = await fetchEntries();
+    allRows = fresh;
+    renderTable(applySearch(allRows)); buildCharts(allRows); buildSnapshot(allRows);
+    alert(`Imported ${rows.length} rows into this account.`);
   });
 
   // Charts
