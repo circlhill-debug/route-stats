@@ -641,7 +641,11 @@
       const avg=avgByDow[dow];
       const cls=classifyRow(tot,avg);
 
-      const tr=document.createElement('tr'); if(cls) tr.classList.add(cls);
+      const tr=document.createElement('tr');
+tr.classList.add('rowLink');
+if(cls) tr.classList.add(cls);
+tr.dataset.date = r.work_date;
+tr.tabIndex = 0; // keyboard focusable
       tr.innerHTML = `<td>${r.work_date}</td><td>R1</td><td>${r.status||'worked'}</td>
         <td class="right">${offH}</td><td class="right">${rteH}</td><td class="right">${tot!=null? tot.toFixed(2):''}</td>
         <td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.miles||0}</td>
@@ -870,6 +874,26 @@
     renderTable(applySearch(allRows));
   });
 
+  // Click or keyboard-activate a table row to load that day
+(function enableRowNavigation(){
+  const tbody = document.querySelector('#tbl tbody');
+  if(!tbody) return;
+
+  function activate(e){
+    const tr = e.target.closest('tr.rowLink');
+    if(!tr) return;
+    $('date').value = tr.dataset.date;
+    loadByDate();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  tbody.addEventListener('click', activate);
+  tbody.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' || e.key === ' '){
+      if(e.target.closest('tr.rowLink')){ e.preventDefault(); activate(e); }
+    }
+  });
+})();
   // Boot
   (async()=>{
     $('date').value=todayStr();
