@@ -84,11 +84,11 @@
 
 <!-- Version tag -->
 <div style="position:fixed;top:6px;right:12px;color:#9aa0aa;font-size:11px;z-index:9999;">
-  v2025-08-16-2
+  v2025-08-24-1
 </div>
 <header>
   <div class="wrap row" style="justify-content:space-between">
-    <h1>📈 ROUTE STATS — Live Dashboard — Aug 16, 2025</h1>
+    <h1>📈 ROUTE STATS — Live Dashboard — Aug 24, 2025</h1>
     <div class="row">
       <button id="linkBtn" class="ghost">Link devices (magic link)</button>
       <button id="signOut" class="ghost">Sign out</button>
@@ -844,7 +844,7 @@
     const overallScore = exp>0? Math.max(0, Math.min(10, Math.round((1 - (totToday - exp)/Math.max(1,exp))*10))) : 0;
     badgeOverall.textContent = `${overallScore}/10`;
 
-    // Rolling 7-day vs prior 7-day (worked days only)
+    // Rolling 7-day window, show totals, but compute % deltas using per-worked-day averages
     const end    = today.endOf('day');
     const start  = end.minus({ days: 6 });
     const pEnd   = start.minus({ days: 1 });
@@ -858,28 +858,41 @@
     const last7  = workRows.filter(r => inRange(r, start, end));
     const prior7 = workRows.filter(r => inRange(r, pStart, pEnd));
 
+    // Totals (still shown in tiles)
     const sum = (arr, fn) => arr.reduce((t, x) => t + (fn(x) || 0), 0);
-    const hThis = sum(last7,  r => Number(r.hours   || 0));
-    const hPrev = sum(prior7, r => Number(r.hours   || 0));
-    const pThis = sum(last7,  r => Number(r.parcels || 0));
-    const pPrev = sum(prior7, r => Number(r.parcels || 0));
-    const lThis = sum(last7,  r => Number(r.letters || 0));
-    const lPrev = sum(prior7, r => Number(r.letters || 0));
+    const hThisTot = sum(last7,  r => Number(r.hours   || 0));
+    const pThisTot = sum(last7,  r => Number(r.parcels || 0));
+    const lThisTot = sum(last7,  r => Number(r.letters || 0));
 
-    const pctDelta = (a,b) => (!b ? null : ((a - b) / b) * 100);
-    const dh = pctDelta(hThis, hPrev);
-    const dp = pctDelta(pThis, pPrev);
-    const dl = pctDelta(lThis, lPrev);
+    $('wkHours').textContent   = (hThisTot || 0).toFixed(2);
+    $('wkParcels').textContent = (pThisTot || 0).toString();
+    $('wkLetters').textContent = (lThisTot || 0).toString();
+
+    // Per-worked-day averages for % delta
+    const dThis = last7.length;
+    const dPrev = prior7.length;
+    const avg = (tot, days) => days ? (tot / days) : null;
+
+    const hPrevAvg = avg(sum(prior7, r => Number(r.hours   || 0)), dPrev);
+    const pPrevAvg = avg(sum(prior7, r => Number(r.parcels || 0)), dPrev);
+    const lPrevAvg = avg(sum(prior7, r => Number(r.letters || 0)), dPrev);
+
+    const hThisAvg = avg(hThisTot, dThis);
+    const pThisAvg = avg(pThisTot, dThis);
+    const lThisAvg = avg(lThisTot, dThis);
+
+    // Suppress delta if the baseline week is too thin
+    const MIN_DAYS = 3;
+    const pctDelta = (a, b, prevDays) => (!b || prevDays < MIN_DAYS) ? null : ((a - b) / b) * 100;
+
+    const dh = pctDelta(hThisAvg, hPrevAvg, dPrev);
+    const dp = pctDelta(pThisAvg, pPrevAvg, dPrev);
+    const dl = pctDelta(lThisAvg, lPrevAvg, dPrev);
 
     const fmt = p => p == null ? '—' : (p >= 0 ? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-
-    $('wkHours').textContent   = (hThis || 0).toFixed(2);
-    $('wkParcels').textContent = (pThis || 0).toString();
-    $('wkLetters').textContent = (lThis || 0).toString();
-
     const setPill = (el, delta) => {
       el.textContent = fmt(delta);
-      el.className = 'pill ' + (delta == null ? '' : delta >= 0 ? 'up' : 'down');
+      el.className = 'pill ' + (delta == null ? 'warn' : (delta >= 0 ? 'up' : 'down'));
     };
     setPill($('wkHoursDelta'),   dh);
     setPill($('wkParcelsDelta'), dp);
@@ -961,7 +974,7 @@
   })();
 
   // Tip: if charts look cached after deploy, refresh with ?v=2 or Cmd–Shift–R
-  console.log('Route Stats loaded — v2025-08-16-2');
+  console.log('Route Stats loaded — v2025-08-24-1');
 </script>
 </body>
 </html>
