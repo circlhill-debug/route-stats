@@ -84,7 +84,7 @@
 
 <!-- Version tag -->
 <div style="position:fixed;top:6px;right:12px;color:#9aa0aa;font-size:11px;z-index:9999;">
-  v2025-08-24-2
+  v2025-08-24-3
 </div>
 <header>
   <div class="wrap row" style="justify-content:space-between">
@@ -139,12 +139,12 @@
         <div class="stat">
           <small>Today Parcels Δ</small>
           <div><strong id="todayParcelsDelta">—</strong></div>
-          <small class="muted">vs past Sundays (worked)</small>
+          <small class="muted">vs past same weekday (worked)</small>
         </div>
         <div class="stat">
           <small>Today Letters Δ</small>
           <div><strong id="todayLettersDelta">—</strong></div>
-          <small class="muted">vs past Sundays (worked)</small>
+          <small class="muted">vs past same weekday (worked)</small>
         </div>
       </div>
     </div>
@@ -471,8 +471,7 @@
       if (boxholders) boxholders.value = b || '';
     }
 
-    try { computeBreakdown(); } catch(_){}
-  }
+    try { computeBreakdown(); } catch(_){}}
 
   let editingKey = null; // { user_id, work_date }
   let lastDeleted = null; // holds last deleted row for undo
@@ -666,7 +665,8 @@
     }
   }
 
-  // CSV export (All or Filtered)
+  // CSV export (All or Filtered) with version in filename
+  const VERSION_TAG = 'v2025-08-24-3';
   function toCsv(rows){
     const headers=['work_date','route','status','start_time','depart_time','return_time','end_time','hours','office_minutes','route_minutes','parcels','letters','miles','mood','notes','weather_json','created_at'];
     const lines=[headers.join(',')];
@@ -676,22 +676,24 @@
         if(h==='route') v='R1'; else v=r[h];
         if(v==null) return '';
         const s=String(v).replace(/"/g,'""');
-        return /[",\n]/.test(s)? `"${s}"`: s;
+        return /[",
+]/.test(s)? `"${s}`+`"` : s;
       });
       lines.push(vals.join(','));
     }
-    return lines.join('\n');
+    return lines.join('
+');
   }
 
   $('exportCsv').addEventListener('click', async ()=>{
     const rows = allRows.length ? allRows : await fetchEntries();
     const blob=new Blob([toCsv(rows)],{type:'text/csv'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='route-stats-all.csv'; a.click();
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`route-stats-all_${VERSION_TAG}.csv`; a.click();
   });
   $('exportCsvFiltered').addEventListener('click', async ()=>{
     const rows = applySearch(allRows.length ? allRows : await fetchEntries());
     const blob=new Blob([toCsv(rows)],{type:'text/csv'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='route-stats-filtered.csv'; a.click();
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`route-stats-filtered_${VERSION_TAG}.csv`; a.click();
   });
 
   // Show current Supabase user id (helps explain missing data if on a new anon session)
@@ -699,7 +701,10 @@
   showUidBtn?.addEventListener('click', async ()=>{
     const { data:{ user } } = await sb.auth.getUser();
     if (!user) { alert('No session. Use Link devices.'); return; }
-    alert(`Current user id (account key):\n${user.id}\n\nEntries are filtered by this id.`);
+    alert(`Current user id (account key):
+${user.id}
+
+Entries are filtered by this id.`);
   });
 
   // CSV Import (restore from an old device/export)
@@ -711,7 +716,9 @@
     if(!file){ return; }
     const text = await file.text();
 
-    const lines = text.split(/\r?\n/).filter(Boolean);
+    const lines = text.split(/
+?
+/).filter(Boolean);
     if(lines.length < 2){ alert('CSV is empty'); return; }
     const headers = lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
     const idx = (name)=> headers.indexOf(name);
@@ -801,7 +808,6 @@
   }
 
   // Snapshot & badges
-  function pct(a,b){ if(!b) return null; return ((a-b)/b)*100; }
   function hhmmFrom(baseDateStr, hours){ if(hours==null) return '—'; const d=DateTime.fromISO(baseDateStr,{zone:ZONE}).set({hour:8,minute:0}); return d.plus({hours}).toFormat('h:mm a'); }
 
   function buildSnapshot(rows){
@@ -871,15 +877,15 @@
     // Per-worked-day averages for % delta
     const dThis = last7.length;
     const dPrev = prior7.length;
-    const avg = (tot, days) => days ? (tot / days) : null;
+    const avgPerDay = (tot, days) => days ? (tot / days) : null;
 
-    const hPrevAvg = avg(sum(prior7, r => Number(r.hours   || 0)), dPrev);
-    const pPrevAvg = avg(sum(prior7, r => Number(r.parcels || 0)), dPrev);
-    const lPrevAvg = avg(sum(prior7, r => Number(r.letters || 0)), dPrev);
+    const hPrevAvg = avgPerDay(sum(prior7, r => Number(r.hours   || 0)), dPrev);
+    const pPrevAvg = avgPerDay(sum(prior7, r => Number(r.parcels || 0)), dPrev);
+    const lPrevAvg = avgPerDay(sum(prior7, r => Number(r.letters || 0)), dPrev);
 
-    const hThisAvg = avg(hThisTot, dThis);
-    const pThisAvg = avg(pThisTot, dThis);
-    const lThisAvg = avg(lThisTot, dThis);
+    const hThisAvg = avgPerDay(hThisTot, dThis);
+    const pThisAvg = avgPerDay(pThisTot, dThis);
+    const lThisAvg = avgPerDay(lThisTot, dThis);
 
     // Suppress delta if the baseline week is too thin
     const MIN_DAYS = 3;
@@ -974,7 +980,7 @@
   })();
 
   // Tip: if charts look cached after deploy, refresh with ?v=2 or Cmd–Shift–R
-  console.log('Route Stats loaded — v2025-08-24-2');
+  console.log('Route Stats loaded — v2025-08-24-3');
 </script>
 </body>
 </html>
