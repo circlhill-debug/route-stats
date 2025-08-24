@@ -84,7 +84,7 @@
 
 <!-- Version tag -->
 <div style="position:fixed;top:6px;right:12px;color:#9aa0aa;font-size:11px;z-index:9999;">
-  v2025-08-24-1
+  v2025-08-24-2
 </div>
 <header>
   <div class="wrap row" style="justify-content:space-between">
@@ -903,10 +903,10 @@
     const todaysRow = workRows.find(r => r.work_date === todayIso);
 
     const sameDow = workRows.filter(r => r.work_date !== todayIso && (dowIndex(r.work_date) === dow));
-    const avg = (arr, fn) => arr.length ? arr.reduce((t,x)=>t+(fn(x)||0),0)/arr.length : null;
+    const meanOf = (arr, fn) => arr.length ? arr.reduce((t,x)=>t+(fn(x)||0),0)/arr.length : null;
 
-    const baseParcels = avg(sameDow, r => Number(r.parcels||0));
-    const baseLetters = avg(sameDow, r => Number(r.letters||0));
+    const baseParcels = meanOf(sameDow, r => Number(r.parcels||0));
+    const baseLetters = meanOf(sameDow, r => Number(r.letters||0));
 
     const todayParcels = todaysRow ? Number(todaysRow.parcels||0) : null;
     const todayLetters = todaysRow ? Number(todaysRow.letters||0) : null;
@@ -974,7 +974,7 @@
   })();
 
   // Tip: if charts look cached after deploy, refresh with ?v=2 or Cmd–Shift–R
-  console.log('Route Stats loaded — v2025-08-24-1');
+  console.log('Route Stats loaded — v2025-08-24-2');
 </script>
 </body>
 </html>
