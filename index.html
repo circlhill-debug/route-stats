@@ -71,6 +71,10 @@
     100%{ box-shadow:0 0 0 14px rgba(43,127,255,0) }
   }
   button.savedFlash{ animation:savedFlash 600ms ease-out }
+
+  /* Clickable results */
+  #tbl tbody tr.rowLink{ cursor:pointer }
+  #tbl tbody tr.rowLink:hover td{ background:rgba(43,127,255,.06) }
 </style>
 </head>
 <body>
@@ -80,7 +84,7 @@
 
 <!-- Version tag -->
 <div style="position:fixed;top:6px;right:12px;color:#9aa0aa;font-size:11px;z-index:9999;">
-  v2025-08-16-1
+  v2025-08-16-2
 </div>
 <header>
   <div class="wrap row" style="justify-content:space-between">
@@ -130,6 +134,17 @@
         <div class="stat">
           <small>Letters (week)</small>
           <div><strong id="wkLetters">—</strong> <span id="wkLettersDelta" class="pill">—</span></div>
+        </div>
+        <!-- New: Today vs same-weekday pills -->
+        <div class="stat">
+          <small>Today Parcels Δ</small>
+          <div><strong id="todayParcelsDelta">—</strong></div>
+          <small class="muted">vs past Sundays (worked)</small>
+        </div>
+        <div class="stat">
+          <small>Today Letters Δ</small>
+          <div><strong id="todayLettersDelta">—</strong></div>
+          <small class="muted">vs past Sundays (worked)</small>
         </div>
       </div>
     </div>
@@ -412,7 +427,7 @@
       work_date:    d,
       route:        "R1",
       start_time:   offDay.checked ? null : (s||null),
-      end_time: offDay.checked ? null : (end.value || null),
+      end_time:     offDay.checked ? null : (end.value || null),
       hours:        offDay.checked ? 0 : (tot||null),
       parcels:      offDay.checked ? 0 : (+parcels.value||0),
       letters:      offDay.checked ? 0 : (+letters.value||0),
@@ -423,8 +438,8 @@
       office_start: s||null,
       depart_time:  departTime.value||null,
       return_time:  returnTime.value||null,
-      office_minutes: offRaw!=null? (offRaw).toFixed(2) : null,
-      route_minutes:  rteRaw!=null? (rteRaw).toFixed(2) : null,
+      office_minutes: offDay.checked ? 0 : (offRaw != null ? +offRaw.toFixed(2) : null),
+      route_minutes:  offDay.checked ? 0 : (rteRaw != null ? +rteRaw.toFixed(2) : null),
       weather_json: weatherString()
     };
   }
@@ -639,10 +654,10 @@
       const cls=classifyRow(tot,avg);
 
       const tr=document.createElement('tr');
-tr.classList.add('rowLink');
-if(cls) tr.classList.add(cls);
-tr.dataset.date = r.work_date;
-tr.tabIndex = 0; // keyboard focusable
+      tr.classList.add('rowLink');
+      if(cls) tr.classList.add(cls);
+      tr.dataset.date = r.work_date;
+      tr.tabIndex = 0; // keyboard focusable
       tr.innerHTML = `<td>${r.work_date}</td><td>R1</td><td>${r.status||'worked'}</td>
         <td class="right">${offH}</td><td class="right">${rteH}</td><td class="right">${tot!=null? tot.toFixed(2):''}</td>
         <td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.miles||0}</td>
@@ -788,7 +803,6 @@ tr.tabIndex = 0; // keyboard focusable
   // Snapshot & badges
   function pct(a,b){ if(!b) return null; return ((a-b)/b)*100; }
   function hhmmFrom(baseDateStr, hours){ if(hours==null) return '—'; const d=DateTime.fromISO(baseDateStr,{zone:ZONE}).set({hour:8,minute:0}); return d.plus({hours}).toFormat('h:mm a'); }
-  function startOfWeekSunday(dt){ const shift = dt.weekday % 7; return dt.startOf('day').minus({ days: shift }); }
 
   function buildSnapshot(rows){
     const today=DateTime.now().setZone(ZONE);
@@ -830,27 +844,73 @@ tr.tabIndex = 0; // keyboard focusable
     const overallScore = exp>0? Math.max(0, Math.min(10, Math.round((1 - (totToday - exp)/Math.max(1,exp))*10))) : 0;
     badgeOverall.textContent = `${overallScore}/10`;
 
-    // Week-over-week tiles
-    const startW = startOfWeekSunday(today);
-    const lastStart = startW.minus({weeks:1});
-    const lastEnd = startW.minus({days:1});
-    const inRange=(r,from,to)=>{ const d=DateTime.fromISO(r.work_date,{zone:ZONE}); return d>=from && d<=to; };
-    const thisW=workRows.filter(r=> inRange(r,startW,today));
-    const lastW=workRows.filter(r=> inRange(r,lastStart,lastEnd));
-    const sum=(arr,fn)=>arr.reduce((t,x)=>t+(fn(x)||0),0);
-    const hThis=sum(thisW,r=>Number(r.hours||0));
-    const hLast=sum(lastW,r=>Number(r.hours||0));
-    const pThis=sum(thisW,r=>Number(r.parcels||0));
-    const pLast=sum(lastW,r=>Number(r.parcels||0));
-    const lThis=sum(thisW,r=>Number(r.letters||0));
-    const lLast=sum(lastW,r=>Number(r.letters||0));
-    const dh=pct(hThis,hLast), dp=pct(pThis,pLast), dl=pct(lThis,lLast);
-    const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-    $('wkHours').textContent = (hThis||0).toFixed(2);
-    $('wkParcels').textContent = (pThis||0).toString();
-    $('wkLetters').textContent = (lThis||0).toString();
-    const setPill=(el,delta)=>{ el.textContent=fmt(delta); el.className='pill '+(delta==null?'':delta>=0?'up':'down'); };
-    setPill($('wkHoursDelta'), dh); setPill($('wkParcelsDelta'), dp); setPill($('wkLettersDelta'), dl);
+    // Rolling 7-day vs prior 7-day (worked days only)
+    const end    = today.endOf('day');
+    const start  = end.minus({ days: 6 });
+    const pEnd   = start.minus({ days: 1 });
+    const pStart = pEnd.minus({ days: 6 });
+
+    const inRange = (r, from, to) => {
+      const d = DateTime.fromISO(r.work_date, { zone: ZONE });
+      return d >= from && d <= to;
+    };
+
+    const last7  = workRows.filter(r => inRange(r, start, end));
+    const prior7 = workRows.filter(r => inRange(r, pStart, pEnd));
+
+    const sum = (arr, fn) => arr.reduce((t, x) => t + (fn(x) || 0), 0);
+    const hThis = sum(last7,  r => Number(r.hours   || 0));
+    const hPrev = sum(prior7, r => Number(r.hours   || 0));
+    const pThis = sum(last7,  r => Number(r.parcels || 0));
+    const pPrev = sum(prior7, r => Number(r.parcels || 0));
+    const lThis = sum(last7,  r => Number(r.letters || 0));
+    const lPrev = sum(prior7, r => Number(r.letters || 0));
+
+    const pctDelta = (a,b) => (!b ? null : ((a - b) / b) * 100);
+    const dh = pctDelta(hThis, hPrev);
+    const dp = pctDelta(pThis, pPrev);
+    const dl = pctDelta(lThis, lPrev);
+
+    const fmt = p => p == null ? '—' : (p >= 0 ? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
+
+    $('wkHours').textContent   = (hThis || 0).toFixed(2);
+    $('wkParcels').textContent = (pThis || 0).toString();
+    $('wkLetters').textContent = (lThis || 0).toString();
+
+    const setPill = (el, delta) => {
+      el.textContent = fmt(delta);
+      el.className = 'pill ' + (delta == null ? '' : delta >= 0 ? 'up' : 'down');
+    };
+    setPill($('wkHoursDelta'),   dh);
+    setPill($('wkParcelsDelta'), dp);
+    setPill($('wkLettersDelta'), dl);
+
+    // Today vs same-weekday baseline (worked days only)
+    const todayIso = today.toISODate();
+    const todaysRow = workRows.find(r => r.work_date === todayIso);
+
+    const sameDow = workRows.filter(r => r.work_date !== todayIso && (dowIndex(r.work_date) === dow));
+    const avg = (arr, fn) => arr.length ? arr.reduce((t,x)=>t+(fn(x)||0),0)/arr.length : null;
+
+    const baseParcels = avg(sameDow, r => Number(r.parcels||0));
+    const baseLetters = avg(sameDow, r => Number(r.letters||0));
+
+    const todayParcels = todaysRow ? Number(todaysRow.parcels||0) : null;
+    const todayLetters = todaysRow ? Number(todaysRow.letters||0) : null;
+
+    const dayPct = (val, base) => (val==null || !base) ? null : ((val - base)/base)*100;
+
+    const tdp = dayPct(todayParcels, baseParcels);
+    const tdl = dayPct(todayLetters, baseLetters);
+
+    // Update subtitles with the real weekday name
+    const wkNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    document.querySelector('#todayParcelsDelta')?.closest('.stat')?.querySelector('small.muted')?.replaceChildren(document.createTextNode(`vs past ${wkNames[dow]}s (worked)`));
+    document.querySelector('#todayLettersDelta')?.closest('.stat')?.querySelector('small.muted')?.replaceChildren(document.createTextNode(`vs past ${wkNames[dow]}s (worked)`));
+
+    const fmtTiny = p => p == null ? '—' : (p >= 0 ? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
+    $('todayParcelsDelta').textContent = fmtTiny(tdp);
+    $('todayLettersDelta').textContent = fmtTiny(tdl);
   }
 
   // Realtime
@@ -872,25 +932,26 @@ tr.tabIndex = 0; // keyboard focusable
   });
 
   // Click or keyboard-activate a table row to load that day
-(function enableRowNavigation(){
-  const tbody = document.querySelector('#tbl tbody');
-  if(!tbody) return;
+  (function enableRowNavigation(){
+    const tbody = document.querySelector('#tbl tbody');
+    if(!tbody) return;
 
-  function activate(e){
-    const tr = e.target.closest('tr.rowLink');
-    if(!tr) return;
-    $('date').value = tr.dataset.date;
-    loadByDate();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  tbody.addEventListener('click', activate);
-  tbody.addEventListener('keydown', (e)=>{
-    if(e.key === 'Enter' || e.key === ' '){
-      if(e.target.closest('tr.rowLink')){ e.preventDefault(); activate(e); }
+    function activate(e){
+      const tr = e.target.closest('tr.rowLink');
+      if(!tr) return;
+      $('date').value = tr.dataset.date;
+      loadByDate();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  });
-})();
+
+    tbody.addEventListener('click', activate);
+    tbody.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter' || e.key === ' '){
+        if(e.target.closest('tr.rowLink')){ e.preventDefault(); activate(e); }
+      }
+    });
+  })();
+
   // Boot
   (async()=>{
     $('date').value=todayStr();
@@ -900,6 +961,7 @@ tr.tabIndex = 0; // keyboard focusable
   })();
 
   // Tip: if charts look cached after deploy, refresh with ?v=2 or Cmd–Shift–R
+  console.log('Route Stats loaded — v2025-08-16-2');
 </script>
 </body>
 </html>
