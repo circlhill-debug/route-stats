@@ -846,12 +846,23 @@ const sum = (arr, fn) => arr.reduce((t, x) => t + (fn(x) || 0), 0);
 const countWorked = (arr) => arr.length;
 
 // Show weekly totals (this week so far)
+// Show weekly totals as "this week so far / last week total"
 const hThisTot = sum(thisWeek,  r => Number(r.hours   || 0));
 const pThisTot = sum(thisWeek,  r => Number(r.parcels || 0));
 const lThisTot = sum(thisWeek,  r => Number(r.letters || 0));
-$('wkHours').textContent   = (hThisTot || 0).toFixed(2);
-$('wkParcels').textContent = (pThisTot || 0).toString();
-$('wkLetters').textContent = (lThisTot || 0).toString();
+
+const hPrevTot = sum(prevWeek,  r => Number(r.hours   || 0));
+const pPrevTot = sum(prevWeek,  r => Number(r.parcels || 0));
+const lPrevTot = sum(prevWeek,  r => Number(r.letters || 0));
+
+$('wkHours').textContent   = `${(hThisTot || 0).toFixed(2)} / ${(hPrevTot || 0).toFixed(2)}`;
+$('wkParcels').textContent = `${pThisTot || 0} / ${pPrevTot || 0}`;
+$('wkLetters').textContent = `${lThisTot || 0} / ${lPrevTot || 0}`;
+
+// little tooltips so future‑you remembers the format
+$('wkHours').title   = 'This week hours / Last week hours';
+$('wkParcels').title = 'This week parcels / Last week parcels';
+$('wkLetters').title = 'This week letters / Last week letters';
 
 // Helper: % delta with protection
 const pctSafe = (a, b) => (b && isFinite(b)) ? ((a - b) / b) * 100 : null;
