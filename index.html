@@ -847,101 +847,50 @@ const countWorked = (arr) => arr.length;
 
 // Show weekly totals (this week so far)
 // Show weekly totals as "this week so far / last week total"
-const hThisTot = sum(thisWeek,  r => Number(r.hours   || 0));
-const pThisTot = sum(thisWeek,  r => Number(r.parcels || 0));
-const lThisTot = sum(thisWeek,  r => Number(r.letters || 0));
+// --- Weekly totals display (Mon-start): "this week so far / last finished week" ---
+const weekStart = startOfWeekMonday(today);
+const prevStart = weekStart.minus({ weeks: 1 });
+const prevEnd   = weekStart.minus({ days: 1 });
 
-const hPrevTot = sum(prevWeek,  r => Number(r.hours   || 0));
-const pPrevTot = sum(prevWeek,  r => Number(r.parcels || 0));
-const lPrevTot = sum(prevWeek,  r => Number(r.letters || 0));
+const inRangeMon = (r, from, to) => {
+  const d = DateTime.fromISO(r.work_date, { zone: ZONE });
+  return d >= from && d <= to && r.status !== 'off';
+};
 
+// This week so far (Mon -> today)
+const thisWeekRows = workRows.filter(r => inRangeMon(r, weekStart, today));
+// Last fully finished week (previous Mon -> Sun)
+const prevWeekRows = workRows.filter(r => inRangeMon(r, prevStart, prevEnd));
+
+const sum = (arr, fn) => arr.reduce((t, x) => t + (fn(x) || 0), 0);
+
+// Compute totals
+let hThisTot = sum(thisWeekRows,  r => Number(r.hours   || 0));
+let pThisTot = sum(thisWeekRows,  r => Number(r.parcels || 0));
+let lThisTot = sum(thisWeekRows,  r => Number(r.letters || 0));
+
+const hPrevTot = sum(prevWeekRows, r => Number(r.hours   || 0));
+const pPrevTot = sum(prevWeekRows, r => Number(r.parcels || 0));
+const lPrevTot = sum(prevWeekRows, r => Number(r.letters || 0));
+
+// If it’s the first day of the week and there are NO entries yet,
+// force the left side to zero (so Monday morning reads "0 / lastWeek").
+const weekDayIndex = today.weekday; // Mon=1..Sun=7
+if (weekDayIndex === 1 && thisWeekRows.length === 0) {
+  hThisTot = 0; pThisTot = 0; lThisTot = 0;
+}
+
+// Paint tiles as "thisWeek / lastFinishedWeek"
 $('wkHours').textContent   = `${(hThisTot || 0).toFixed(2)} / ${(hPrevTot || 0).toFixed(2)}`;
 $('wkParcels').textContent = `${pThisTot || 0} / ${pPrevTot || 0}`;
 $('wkLetters').textContent = `${lThisTot || 0} / ${lPrevTot || 0}`;
 
-// little tooltips so future‑you remembers the format
-$('wkHours').title   = 'This week hours / Last week hours';
-$('wkParcels').title = 'This week parcels / Last week parcels';
-$('wkLetters').title = 'This week letters / Last week letters';
-
-// Helper: % delta with protection
-const pctSafe = (a, b) => (b && isFinite(b)) ? ((a - b) / b) * 100 : null;
-
-// 1) Last week’s FINAL deltas (to carry forward on Monday)
-// Use per-worked-day averages to neutralize off-days
-const daysPrev   = countWorked(prevWeek);
-const daysBefore = countWorked(beforeWeek);
-
-const avgPerDay = (arr, fn) => {
-  const c = countWorked(arr);
-  return c ? sum(arr, fn) / c : null;
-};
-const hPrevAvg   = avgPerDay(prevWeek,   r => Number(r.hours   || 0));
-const pPrevAvg   = avgPerDay(prevWeek,   r => Number(r.parcels || 0));
-const lPrevAvg   = avgPerDay(prevWeek,   r => Number(r.letters || 0));
-const hBeforeAvg = avgPerDay(beforeWeek, r => Number(r.hours   || 0));
-const pBeforeAvg = avgPerDay(beforeWeek, r => Number(r.parcels || 0));
-const lBeforeAvg = avgPerDay(beforeWeek, r => Number(r.letters || 0));
-
-// If we truly have no sensible baseline, carry 0 instead of null to avoid blanks
-const carryH = (daysPrev >= 2 && daysBefore >= 2) ? pctSafe(hPrevAvg, hBeforeAvg) : 0;
-const carryP = (daysPrev >= 2 && daysBefore >= 2) ? pctSafe(pPrevAvg, pBeforeAvg) : 0;
-const carryL = (daysPrev >= 2 && daysBefore >= 2) ? pctSafe(lPrevAvg, lBeforeAvg) : 0;
-
-// 2) This week’s daily vs same-weekday deltas (so far)
-function groupByWeekday(arr){
-  const map = new Map(); // 1..7 -> row
-  for(const r of arr){
-    const d = DateTime.fromISO(r.work_date, { zone: ZONE }).weekday; // 1..7
-    map.set(d, r);
-  }
-  return map;
-}
-const thisByWd = groupByWeekday(thisWeek);
-const prevByWd = groupByWeekday(prevWeek);
-
-// For days we have so far this week, compare to last week’s same weekday
-const weekdaysSoFar = [...thisByWd.keys()].filter(d => prevByWd.has(d));
-const n = weekdaysSoFar.length;
-
-function avgDailyDelta(metric){
-  if(n === 0) return null;
-  let acc = 0, c = 0;
-  for(const wd of weekdaysSoFar){
-    const a = thisByWd.get(wd), b = prevByWd.get(wd);
-    const va = Number(a?.[metric] || 0);
-    const vb = Number(b?.[metric] || 0);
-    // Skip if prior weekday has 0 baseline to avoid absurd spikes
-    if(vb > 0){
-      acc += pctSafe(va, vb);
-      c++;
-    }
-  }
-  return c ? acc / c : null;
-}
-
-const dH = avgDailyDelta('hours');
-const dP = avgDailyDelta('parcels');
-const dL = avgDailyDelta('letters');
-
-// 3) Blend: carry from last week, then ease toward this week’s daily average
-function blend(carry, dailyAvg, daysSoFar){
-  if(daysSoFar <= 0 || dailyAvg == null || !isFinite(dailyAvg)) return carry ?? 0;
-  const weight = Math.min(daysSoFar, 5) / 5; // 0.2 per weekday; by Friday it’s 1.0
-  return (carry ?? 0) * (1 - weight) + dailyAvg * weight;
-}
-
-const blendedH = blend(carryH, dH, n);
-const blendedP = blend(carryP, dP, n);
-const blendedL = blend(carryL, dL, n);
-
-// Paint pills
-const fmt = p => (p == null) ? '—' : (p >= 0 ? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-const setPill = (el, val) => { el.textContent = fmt(val); el.className = 'pill ' + (val == null ? 'warn' : (val >= 0 ? 'up' : 'down')); };
-
-setPill($('wkHoursDelta'),   blendedH);
-setPill($('wkParcelsDelta'), blendedP);
-setPill($('wkLettersDelta'), blendedL);
+// Helpful tooltips with actual date ranges
+const fmt = d => d.toFormat('LLL d');
+$('wkHours').title   = `This week (${fmt(weekStart)} → ${fmt(today)}), vs last finished week (${fmt(prevStart)} → ${fmt(prevEnd)})`;
+$('wkParcels').title = $('wkHours').title;
+$('wkLetters').title = $('wkHours').title;
+// --- end weekly totals display ---
 // --- end progressive weekly delta ---
     // Today vs same-weekday baseline (worked days only)
     const todayIso = today.toISODate();
