@@ -326,6 +326,11 @@
   // TZ-safe helpers
   function todayStr(){ return DateTime.now().setZone(ZONE).toISODate(); }
   function hhmmNow(){ const d = DateTime.now().setZone(ZONE); return `${String(d.hour).padStart(2,'0')}:${String(d.minute).padStart(2,'0')}`; }
+    // Monday as start-of-week (Luxon weekday: Mon=1..Sun=7)
+  function startOfWeekMonday(dt){
+    const shift = (dt.weekday + 6) % 7;  // 0 on Monday, 6 on Sunday
+    return dt.startOf('day').minus({ days: shift });
+  }
   function diffHours(d, t1, t2){
     if(!t1||!t2) return null;
     const a = DateTime.fromISO(`${d}T${t1}`, { zone: ZONE });
@@ -820,57 +825,113 @@
     const overallScore = exp>0? Math.max(0, Math.min(10, Math.round((1 - (totToday - exp)/Math.max(1,exp))*10))) : 0;
     badgeOverall.textContent = `${overallScore}/10`;
 
-    // Rolling 7-day totals, deltas based on per-worked-day averages
-    const end    = today.endOf('day');
-    const start  = end.minus({ days: 6 });
-    const pEnd   = start.minus({ days: 1 });
-    const pStart = pEnd.minus({ days: 6 });
+    // --- Progressive Monday-week delta (carry last week; blend daily vs same weekday) ---
+// Week bounds (Mon-start)
+const thisStart = startOfWeekMonday(today);
+const prevStart = thisStart.minus({ weeks: 1 });
+const prevEnd   = thisStart.minus({ days: 1 });
+const beforeStart = prevStart.minus({ weeks: 1 });
+const beforeEnd   = prevStart.minus({ days: 1 });
 
-    const inRange = (r, from, to) => {
-      const d = DateTime.fromISO(r.work_date, { zone: ZONE });
-      return d >= from && d <= to;
-    };
+const inRangeW = (r, from, to) => {
+  const d = DateTime.fromISO(r.work_date, { zone: ZONE });
+  return d >= from && d <= to && r.status !== 'off';
+};
 
-    const last7  = workRows.filter(r => inRange(r, start, end));
-    const prior7 = workRows.filter(r => inRange(r, pStart, pEnd));
+const thisWeek   = workRows.filter(r => inRangeW(r, thisStart, today));     // up to today
+const prevWeek   = workRows.filter(r => inRangeW(r, prevStart, prevEnd));
+const beforeWeek = workRows.filter(r => inRangeW(r, beforeStart, beforeEnd));
 
-    const sum = (arr, fn) => arr.reduce((t, x) => t + (fn(x) || 0), 0);
-    const hThisTot = sum(last7,  r => Number(r.hours   || 0));
-    const pThisTot = sum(last7,  r => Number(r.parcels || 0));
-    const lThisTot = sum(last7,  r => Number(r.letters || 0));
+const sum = (arr, fn) => arr.reduce((t, x) => t + (fn(x) || 0), 0);
+const countWorked = (arr) => arr.length;
 
-    $('wkHours').textContent   = (hThisTot || 0).toFixed(2);
-    $('wkParcels').textContent = (pThisTot || 0).toString();
-    $('wkLetters').textContent = (lThisTot || 0).toString();
+// Show weekly totals (this week so far)
+const hThisTot = sum(thisWeek,  r => Number(r.hours   || 0));
+const pThisTot = sum(thisWeek,  r => Number(r.parcels || 0));
+const lThisTot = sum(thisWeek,  r => Number(r.letters || 0));
+$('wkHours').textContent   = (hThisTot || 0).toFixed(2);
+$('wkParcels').textContent = (pThisTot || 0).toString();
+$('wkLetters').textContent = (lThisTot || 0).toString();
 
-    const dThis = last7.length;
-    const dPrev = prior7.length;
-    const avgPerDay = (tot, days) => days ? (tot / days) : null;
+// Helper: % delta with protection
+const pctSafe = (a, b) => (b && isFinite(b)) ? ((a - b) / b) * 100 : null;
 
-    const hPrevAvg = avgPerDay(sum(prior7, r => Number(r.hours   || 0)), dPrev);
-    const pPrevAvg = avgPerDay(sum(prior7, r => Number(r.parcels || 0)), dPrev);
-    const lPrevAvg = avgPerDay(sum(prior7, r => Number(r.letters || 0)), dPrev);
+// 1) Last week’s FINAL deltas (to carry forward on Monday)
+// Use per-worked-day averages to neutralize off-days
+const daysPrev   = countWorked(prevWeek);
+const daysBefore = countWorked(beforeWeek);
 
-    const hThisAvg = avgPerDay(hThisTot, dThis);
-    const pThisAvg = avgPerDay(pThisTot, dThis);
-    const lThisAvg = avgPerDay(lThisTot, dThis);
+const avgPerDay = (arr, fn) => {
+  const c = countWorked(arr);
+  return c ? sum(arr, fn) / c : null;
+};
+const hPrevAvg   = avgPerDay(prevWeek,   r => Number(r.hours   || 0));
+const pPrevAvg   = avgPerDay(prevWeek,   r => Number(r.parcels || 0));
+const lPrevAvg   = avgPerDay(prevWeek,   r => Number(r.letters || 0));
+const hBeforeAvg = avgPerDay(beforeWeek, r => Number(r.hours   || 0));
+const pBeforeAvg = avgPerDay(beforeWeek, r => Number(r.parcels || 0));
+const lBeforeAvg = avgPerDay(beforeWeek, r => Number(r.letters || 0));
 
-    const MIN_DAYS = 3;
-    const pctDelta = (a, b, prevDays) => (!b || prevDays < MIN_DAYS) ? null : ((a - b) / b) * 100;
+// If we truly have no sensible baseline, carry 0 instead of null to avoid blanks
+const carryH = (daysPrev >= 2 && daysBefore >= 2) ? pctSafe(hPrevAvg, hBeforeAvg) : 0;
+const carryP = (daysPrev >= 2 && daysBefore >= 2) ? pctSafe(pPrevAvg, pBeforeAvg) : 0;
+const carryL = (daysPrev >= 2 && daysBefore >= 2) ? pctSafe(lPrevAvg, lBeforeAvg) : 0;
 
-    const dh = pctDelta(hThisAvg, hPrevAvg, dPrev);
-    const dp = pctDelta(pThisAvg, pPrevAvg, dPrev);
-    const dl = pctDelta(lThisAvg, lPrevAvg, dPrev);
+// 2) This week’s daily vs same-weekday deltas (so far)
+function groupByWeekday(arr){
+  const map = new Map(); // 1..7 -> row
+  for(const r of arr){
+    const d = DateTime.fromISO(r.work_date, { zone: ZONE }).weekday; // 1..7
+    map.set(d, r);
+  }
+  return map;
+}
+const thisByWd = groupByWeekday(thisWeek);
+const prevByWd = groupByWeekday(prevWeek);
 
-    const fmt = p => p == null ? '—' : (p >= 0 ? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
-    const setPill = (el, delta) => {
-      el.textContent = fmt(delta);
-      el.className = 'pill ' + (delta == null ? 'warn' : (delta >= 0 ? 'up' : 'down'));
-    };
-    setPill($('wkHoursDelta'),   dh);
-    setPill($('wkParcelsDelta'), dp);
-    setPill($('wkLettersDelta'), dl);
+// For days we have so far this week, compare to last week’s same weekday
+const weekdaysSoFar = [...thisByWd.keys()].filter(d => prevByWd.has(d));
+const n = weekdaysSoFar.length;
 
+function avgDailyDelta(metric){
+  if(n === 0) return null;
+  let acc = 0, c = 0;
+  for(const wd of weekdaysSoFar){
+    const a = thisByWd.get(wd), b = prevByWd.get(wd);
+    const va = Number(a?.[metric] || 0);
+    const vb = Number(b?.[metric] || 0);
+    // Skip if prior weekday has 0 baseline to avoid absurd spikes
+    if(vb > 0){
+      acc += pctSafe(va, vb);
+      c++;
+    }
+  }
+  return c ? acc / c : null;
+}
+
+const dH = avgDailyDelta('hours');
+const dP = avgDailyDelta('parcels');
+const dL = avgDailyDelta('letters');
+
+// 3) Blend: carry from last week, then ease toward this week’s daily average
+function blend(carry, dailyAvg, daysSoFar){
+  if(daysSoFar <= 0 || dailyAvg == null || !isFinite(dailyAvg)) return carry ?? 0;
+  const weight = Math.min(daysSoFar, 5) / 5; // 0.2 per weekday; by Friday it’s 1.0
+  return (carry ?? 0) * (1 - weight) + dailyAvg * weight;
+}
+
+const blendedH = blend(carryH, dH, n);
+const blendedP = blend(carryP, dP, n);
+const blendedL = blend(carryL, dL, n);
+
+// Paint pills
+const fmt = p => (p == null) ? '—' : (p >= 0 ? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
+const setPill = (el, val) => { el.textContent = fmt(val); el.className = 'pill ' + (val == null ? 'warn' : (val >= 0 ? 'up' : 'down')); };
+
+setPill($('wkHoursDelta'),   blendedH);
+setPill($('wkParcelsDelta'), blendedP);
+setPill($('wkLettersDelta'), blendedL);
+// --- end progressive weekly delta ---
     // Today vs same-weekday baseline (worked days only)
     const todayIso = today.toISODate();
     const todaysRow = workRows.find(r => r.work_date === todayIso);
