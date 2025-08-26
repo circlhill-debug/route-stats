@@ -178,7 +178,12 @@
       <div><label>Return (optional)</label><div class="row"><input id="returnTime" type="time" placeholder="--:--"><button id="btnReturnNow" class="ghost">Now</button></div></div>
       <div><label>Clock Out</label><div class="row"><input id="end" type="time" placeholder="--:--"><button id="btnClockNow2" class="ghost">Now</button></div></div>
 
-      <div><label>Parcels</label><input id="parcels" type="number" min="0" value="0"></div>
+      <div><label>Parcels</label>
+  <div>
+    <label>Lunch Break (min)</label>
+    <input id="lunch" type="number" min="0" step="1" value="0" placeholder="0">
+  </div>
+<input id="parcels" type="number" min="0" value="0"></div>
       <div><label>Letters</label><input id="letters" type="number" min="0" value="0"></div>
       <div><label>Miles</label><input id="miles" type="number" step="0.1" min="0" value="0"></div>
 
@@ -342,7 +347,8 @@
       const span = diffHours(d, s, routeEndTime());
       if (span!=null && off!=null) rte = Math.max(0, +(span - off).toFixed(2));
     }
-    const tot=(off??0)+(rte??0);
+    let lunchMin=+lunch?.value||0;
+const tot=Math.max(0,(off??0)+(rte??0)-(lunchMin/60));
     officeH.textContent = off!=null? off.toFixed(2) : '—';
     routeH.textContent  = rte!=null? rte.toFixed(2) : '—';
     totalH.textContent  = (off!=null||rte!=null)? tot.toFixed(2) : '—';
