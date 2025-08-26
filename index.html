@@ -640,7 +640,11 @@
     const dp = blend(pCarry, pTarget);
     const dl = blend(lCarry, lTarget);
 
-    const fmt=p=> p==null? '—' : (p>=0? `↑ ${p.toFixed(0)}%` : `↓ ${Math.abs(p).toFixed(0)}%`);
+    const fmt = p => {
+  if (p == null) return '—';
+  const rounded = Math.round(p);
+  return rounded >= 0 ? `↑ ${rounded}%` : `↓ ${Math.abs(rounded)}%`;
+};
     const setPill=(el,delta)=>{ el.textContent=fmt(delta); el.className='pill '+(delta==null?'warn':delta>=0?'up':'down'); };
     setPill($('wkHoursDelta'),   dh);
     setPill($('wkParcelsDelta'), dp);
