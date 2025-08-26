@@ -84,7 +84,7 @@
 
 <!-- Version tag -->
 <div style="position:fixed;top:6px;right:12px;color:#9aa0aa;font-size:11px;z-index:9999;">
-  v2025-08-27-patched
+  v2025-08-27-lunch
 </div>
 <header>
   <div class="wrap row" style="justify-content:space-between">
@@ -179,7 +179,10 @@
       <div><label>Clock Out</label><div class="row"><input id="end" type="time" placeholder="--:--"><button id="btnClockNow2" class="ghost">Now</button></div></div>
 
       <div><label>Parcels</label>
-  
+  <div>
+    <label>Lunch Break (min)</label>
+    <input id="lunch" type="number" min="0" step="1" value="0" placeholder="0">
+  </div>
 <input id="parcels" type="number" min="0" value="0"></div>
       <div><label>Letters</label><input id="letters" type="number" min="0" value="0"></div>
       <div><label>Miles</label><input id="miles" type="number" step="0.1" min="0" value="0"></div>
@@ -344,7 +347,8 @@
       const span = diffHours(d, s, routeEndTime());
       if (span!=null && off!=null) rte = Math.max(0, +(span - off).toFixed(2));
     }
-    const tot=Math.max(0, (off??0)+(rte??0));
+    let lunchMin=+lunch?.value||0;
+const tot=Math.max(0,(off??0)+(rte??0)-(lunchMin/60));
     officeH.textContent = off!=null? off.toFixed(2) : '—';
     routeH.textContent  = rte!=null? rte.toFixed(2) : '—';
     totalH.textContent  = (off!=null||rte!=null)? tot.toFixed(2) : '—';
@@ -527,7 +531,7 @@
     }
   }
 
-  const VERSION_TAG='v2025-08-27-patched';
+  const VERSION_TAG='v2025-08-27-lunch';
   function toCsv(rows){
     const headers=['work_date','route','status','start_time','depart_time','return_time','end_time','hours','office_minutes','route_minutes','parcels','letters','miles','mood','notes','weather_json','created_at'];
     const lines=[headers.join(',')];
@@ -690,7 +694,7 @@
     $('date').value=todayStr(); await loadByDate(); const rows=await fetchEntries(); allRows=rows; renderTable(applySearch(allRows)); buildCharts(allRows); buildSnapshot(allRows); computeBreakdown();
   })();
 
-  console.log('Route Stats loaded — v2025-08-27-patched');
+  console.log('Route Stats loaded — v2025-08-27-lunch');
 </script>
 </body>
 </html>
