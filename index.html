@@ -3,11 +3,15 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- Progressive Web App metadata -->
+<meta name="theme-color" content="#2b7fff" />
+<link rel="manifest" href="/route-stats-pwa/manifest.json">
+<link rel="apple-touch-icon" href="/route-stats-pwa/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="RouteStats" />
 <title>Route Stats — Live Dashboard</title>
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-180.png">
-<script src="sw-register.js"></script>
-  <style>
+<style>
   :root{
     --bg:#0f1115; --card:#141821; --border:#22262e; --text:#e8e8ea; --muted:#9aa0aa; --brand:#2b7fff;
     --good:#7CE38B; --warn:#FFD27A; --bad:#FF8FA1
@@ -87,12 +91,14 @@
 
 <!-- Version tag -->
 <div style="position:fixed;top:6px;right:12px;color:#9aa0aa;font-size:11px;z-index:9999;">
-  v2025-08-27-patched
+  v2025-08-27-patched+setpw
 </div>
 <header>
   <div class="wrap row" style="justify-content:space-between">
     <h1>📈 ROUTE STATS — Live Dashboard — Aug 24, 2025</h1>
     <div class="row">
+      <button id="signInBtn" class="ghost">Sign in</button>
+      <button id="setPwBtn" class="ghost" title="Set/Change password for the current account">Set password</button>
       <button id="linkBtn" class="ghost">Link devices (magic link)</button>
       <button id="signOut" class="ghost">Sign out</button>
     </div>
@@ -181,9 +187,7 @@
       <div><label>Return (optional)</label><div class="row"><input id="returnTime" type="time" placeholder="--:--"><button id="btnReturnNow" class="ghost">Now</button></div></div>
       <div><label>Clock Out</label><div class="row"><input id="end" type="time" placeholder="--:--"><button id="btnClockNow2" class="ghost">Now</button></div></div>
 
-      <div><label>Parcels</label>
-  
-<input id="parcels" type="number" min="0" value="0"></div>
+      <div><label>Parcels</label><input id="parcels" type="number" min="0" value="0"></div>
       <div><label>Letters</label><input id="letters" type="number" min="0" value="0"></div>
       <div><label>Miles</label><input id="miles" type="number" step="0.1" min="0" value="0"></div>
 
@@ -268,6 +272,35 @@
   </form>
 </dialog>
 
+<!-- Email + Password dialog -->
+<dialog id="pwDlg">
+  <form method="dialog" class="grid" style="min-width:320px;gap:10px">
+    <h3 style="margin:0">Sign in</h3>
+    <input id="loginEmail" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="loginPass"  type="password" placeholder="Password" autocomplete="current-password" required>
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <button class="ghost" value="cancel">Cancel</button>
+      <button id="doLogin">Sign In</button>
+      <button id="doSignup" class="ghost" type="button" title="Create a new account">Create Account</button>
+    </div>
+    <small id="authMsg"></small>
+  </form>
+</dialog>
+
+<!-- NEW: Set Password dialog -->
+<dialog id="setPwDlg">
+  <form method="dialog" class="grid" style="min-width:320px;gap:10px">
+    <h3 style="margin:0">Set a new password</h3>
+    <input id="newPass"  type="password" placeholder="New password (6+ chars)" required>
+    <input id="newPass2" type="password" placeholder="Confirm password" required>
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <button class="ghost" value="cancel">Cancel</button>
+      <button id="doSetPw">Save</button>
+    </div>
+    <small id="setPwMsg"></small>
+  </form>
+</dialog>
+
 <button class="fab" id="fab">+ Add Entry</button>
 
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
@@ -301,10 +334,36 @@
   // Supabase
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, { auth:{ persistSession:true }});
 
+  // === Handle auth callbacks (incl. password recovery links) ===
+  (async () => {
+    try {
+      const { data, error } = await sb.auth.getSessionFromUrl();
+      // If this was a password recovery link, prompt to set a new password
+      if (!error && data?.session && /type=recovery/i.test(location.hash)) {
+        const p1 = prompt('Enter a new password (6+ characters)');
+        if (p1 && p1.length >= 6) {
+          const { error: uerr } = await sb.auth.updateUser({ password: p1 });
+          if (uerr) alert('Update failed: ' + uerr.message);
+          else alert('Password updated. You can now sign in normally.');
+        } else {
+          alert('Password must be at least 6 characters.');
+        }
+        // clean the URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (!error && data?.session) {
+        // generic callback: clean hash
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) {
+      console.warn('Auth callback error', e);
+    }
+  })();
+
+  // Connectivity + session bootstrap
   (async ()=>{ try{ await fetch(SUPABASE_URL,{mode:'no-cors'}); dConn.textContent='Connected'; }catch{ dConn.textContent='Error'; }})();
   (async function ensureSession(){
     const { data:{ session } } = await sb.auth.getSession();
-    if(!session){ await sb.auth.signInAnonymously().catch(()=>{}); }
+    if(!session){ await sb.auth.signInAnonymously().catch(()=>{}); } // you can remove this later if you like
     const { data:{ user } } = await sb.auth.getUser();
     dAuth.textContent = user? 'Session' : 'No session';
   })();
@@ -320,7 +379,92 @@
   });
   $('signOut').addEventListener('click', ()=> sb.auth.signOut().then(()=>location.reload()));
 
-  // Elements
+  // === Email + Password auth ===
+  const signInBtn = $('signInBtn');
+  const pwDlg     = $('pwDlg');
+  const loginEmail= $('loginEmail');
+  const loginPass = $('loginPass');
+  const doLogin   = $('doLogin');
+  const doSignup  = $('doSignup');
+  const authMsg   = $('authMsg');
+
+  signInBtn?.addEventListener('click', ()=> {
+    authMsg.textContent = '';
+    loginEmail.value = loginEmail.value || '';
+    loginPass.value = '';
+    pwDlg.showModal();
+  });
+
+  doLogin?.addEventListener('click', async (e)=>{
+    e.preventDefault();
+    authMsg.textContent = 'Signing in…';
+    const { error } = await sb.auth.signInWithPassword({
+      email: (loginEmail.value||'').trim(),
+      password: loginPass.value||''
+    });
+    if (error) {
+      if (/Email not confirmed/i.test(error.message)) authMsg.textContent = 'Email not confirmed. Use reset link or check your inbox.';
+      else if (/Invalid login credentials/i.test(error.message)) authMsg.textContent = 'Invalid email or password. Try Reset or Create Account.';
+      else authMsg.textContent = 'Error: ' + error.message;
+      return;
+    }
+    authMsg.textContent = 'Signed in!';
+    pwDlg.close();
+    const rows = await fetchEntries(); allRows=rows; renderTable(applySearch(allRows)); buildCharts(allRows); buildSnapshot(allRows);
+  });
+
+  doSignup?.addEventListener('click', async ()=>{
+    authMsg.textContent = 'Creating account…';
+    const { error } = await sb.auth.signUp({
+      email: (loginEmail.value||'').trim(),
+      password: loginPass.value||''
+    });
+    authMsg.textContent = error
+      ? ('Error: ' + error.message)
+      : 'Account created. If email confirmation is on, check your inbox, then Sign In.';
+  });
+
+  // === Set password for the CURRENT logged-in user ===
+  const setPwBtn = $('setPwBtn');
+  const setPwDlg = $('setPwDlg');
+  const newPass  = $('newPass');
+  const newPass2 = $('newPass2');
+  const setPwMsg = $('setPwMsg');
+  const doSetPw  = $('doSetPw');
+
+  setPwBtn?.addEventListener('click', ()=> {
+    setPwMsg.textContent = '';
+    newPass.value = '';
+    newPass2.value = '';
+    setPwDlg.showModal();
+  });
+
+  doSetPw?.addEventListener('click', async (e)=>{
+    e.preventDefault();
+    const p1 = newPass.value || '';
+    const p2 = newPass2.value || '';
+    if (p1.length < 6) { setPwMsg.textContent = 'Password must be at least 6 characters.'; return; }
+    if (p1 !== p2)     { setPwMsg.textContent = 'Passwords do not match.'; return; }
+    setPwMsg.textContent = 'Updating…';
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    if (error) { setPwMsg.textContent = 'Error: ' + error.message; return; }
+    setPwMsg.textContent = 'Password set! You can now sign in anywhere.';
+    setTimeout(()=> setPwDlg.close(), 600);
+  });
+
+  sb.auth.onAuthStateChange((_evt, session) => {
+    const authed = !!session;
+    const signOutBtn = $('signOut');
+    if (signOutBtn) signOutBtn.style.display = authed ? 'inline-block' : 'none';
+    dAuth.textContent = authed ? 'Session' : 'No session';
+  });
+
+  // ====== APP LOGIC (unchanged beyond tiny UX tweaks) ======
+
+  function dowIndex(dateStr){ return DateTime.fromFormat(dateStr,'yyyy-MM-dd',{zone:ZONE}).weekday % 7; }
+
+  function routeEndTime(){ return ($('returnTime').value || $('end').value || ''); }
+
   const date=$('date'), route=$('route'), start=$('start'), end=$('end'), departTime=$('departTime'), returnTime=$('returnTime');
   const parcels=$('parcels'), letters=$('letters'), miles=$('miles'), mood=$('mood'), notes=$('notes');
   const weather=$('weather'), temp=$('temp'), boxholders=$('boxholders');
@@ -328,13 +472,12 @@
   const officeH=$('officeH'), routeH=$('routeH'), totalH=$('totalH');
   const expEnd=$('expEnd'), expMeta=$('expMeta');
   const badgeVolume=$('badgeVolume'), badgeRouteEff=$('badgeRouteEff'), badgeOverall=$('badgeOverall');
+  const dConnEl=$('dConn'), dAuthEl=$('dAuth'), dWriteEl=$('dWrite');
 
-  // Tooltips
   badgeVolume.title   = 'Volume = parcels + 0.33×letters (rank vs recent, 0–10)';
   badgeRouteEff.title = 'Route Efficiency = today’s street hours vs typical for this weekday (0–10)';
   badgeOverall.title  = 'Overall = total hours vs expected (weekday avg)';
 
-  // Defaults
   date.value = todayStr();
   route.value = 'R1';
 
@@ -551,7 +694,7 @@
   importFile?.addEventListener('change', async ()=>{
     const file=importFile.files?.[0]; if(!file) return; const text=await file.text();
     const lines=text.split(/\r?\n/).filter(Boolean); if(lines.length<2){ alert('CSV is empty'); return; }
-    const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,'')); const idx=(n)=> headers.indexOf(n);
+    const headers=lines[0].split(',').map(h=> h.trim().replace(/^"|"$/g,'')); const idx=(n)=> headers.indexOf(n);
     const splitCsv=(row)=> row.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/); const unq=(v)=> (/^".*"$/.test(v)? v.slice(1,-1).replace(/""/g,'"') : v);
     const { data:{ user } } = await sb.auth.getUser(); if(!user){ alert('No session. Use Link devices.'); return; }
     const rows=[]; for(let i=1;i<lines.length;i++){ const cols=splitCsv(lines[i]); const get=(name)=> unq(cols[idx(name)] ?? ''); const r={ user_id:user.id, work_date:get('work_date'), route:'R1', status:get('status')||'worked', start_time:get('start_time')||null, depart_time:get('depart_time')||null, return_time:get('return_time')||null, end_time:get('end_time')||null, hours:+(get('hours')||0)||null, office_minutes:get('office_minutes')||null, route_minutes:get('route_minutes')||null, parcels:+(get('parcels')||0)||0, letters:+(get('letters')||0)||0, miles:+(get('miles')||0)||0, mood:get('mood')||null, notes:get('notes')||null, weather_json:get('weather_json')||null }; if(r.work_date) rows.push(r); }
@@ -646,10 +789,10 @@
     const dl = blend(lCarry, lTarget);
 
     const fmt = p => {
-  if (p == null) return '—';
-  const rounded = Math.round(p);
-  return rounded >= 0 ? `↑ ${rounded}%` : `↓ ${Math.abs(rounded)}%`;
-};
+      if (p == null) return '—';
+      const rounded = Math.round(p);
+      return rounded >= 0 ? `↑ ${rounded}%` : `↓ ${Math.abs(rounded)}%`;
+    };
     const setPill=(el,delta)=>{ el.textContent=fmt(delta); el.className='pill '+(delta==null?'warn':delta>=0?'up':'down'); };
     setPill($('wkHoursDelta'),   dh);
     setPill($('wkParcelsDelta'), dp);
@@ -693,7 +836,17 @@
     $('date').value=todayStr(); await loadByDate(); const rows=await fetchEntries(); allRows=rows; renderTable(applySearch(allRows)); buildCharts(allRows); buildSnapshot(allRows); computeBreakdown();
   })();
 
-  console.log('Route Stats loaded — v2025-08-27-patched');
+  console.log('Route Stats loaded — v2025-08-27-patched+setpw');
+</script>
+<!-- Register the service worker for offline support -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js').catch(function(err) {
+        console.error('Service worker registration failed:', err);
+      });
+    });
+  }
 </script>
 </body>
 </html>
