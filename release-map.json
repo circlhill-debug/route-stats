@@ -1,0 +1,11 @@
+{
+  "pwa": {
+    "prefix": "/route-stats-pwa/",
+    "rewrite": [
+      { "file": "manifest.json", "from": "\"start_url\": \"./\"", "to": "\"start_url\": \"/route-stats-pwa/\"" },
+      { "file": "manifest.json", "from": "\"scope\": \"./\"",     "to": "\"scope\": \"/route-stats-pwa/\"" },
+      { "file": "index.html",    "from": "href=\"manifest.json\"", "to": "href=\"/route-stats-pwa/manifest.json\"" },
+      { "file": "index.html",    "from": "href=\"icon-180.png\"",  "to": "href=\"/route-stats-pwa/icon-180.png\"" }
+    ]
+  }
+}
