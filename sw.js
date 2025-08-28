@@ -1,5 +1,5 @@
 // Simple cache-first SW with version bump
-const SW_VERSION = 'preflight-001';
+const SW_VERSION = 'preflight-002';
 const CACHE = 'rs-cache-' + SW_VERSION;
 
 self.addEventListener('install', (e) => {
