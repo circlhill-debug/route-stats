@@ -95,7 +95,8 @@
 </div>
 <header>
   <div class="wrap row" style="justify-content:space-between">
-    <h1>📈 ROUTE STATS — Live Dashboard — Aug 24, 2025</h1>
+    <!-- CHANGED: dynamic date -->
+    <h1>📈 ROUTE STATS — Live Dashboard — <span id="headerDate">—</span></h1>
     <div class="row">
       <button id="signInBtn" class="ghost">Sign in</button>
       <button id="setPwBtn" class="ghost" title="Set/Change password for the current account">Set password</button>
@@ -317,11 +318,36 @@
   const DateTime = luxon.DateTime;
   const dConn=$('dConn'), dAuth=$('dAuth'), dWrite=$('dWrite');
 
+  // NEW: set live header date
+  (function(){
+    const el = document.getElementById('headerDate');
+    if (el) {
+      const d = DateTime.now().setZone(ZONE);
+      el.textContent = d.toFormat('MMM d, yyyy');
+    }
+  })();
+
   function todayStr(){ return DateTime.now().setZone(ZONE).toISODate(); }
   function hhmmNow(){ const d = DateTime.now().setZone(ZONE); return `${String(d.hour).padStart(2,'0')}:${String(d.minute).padStart(2,'0')}`; }
   function dowIndex(dateStr){ return DateTime.fromFormat(dateStr,'yyyy-MM-dd',{zone:ZONE}).weekday % 7; }
   function startOfWeekMonday(dt){ const w = dt.weekday; const shift = (w+6)%7; return dt.startOf('day').minus({days:shift}); }
   function endOfWeekSunday(dt){ return startOfWeekMonday(dt).plus({days:6}).endOf('day'); }
+
+  // NEW: Moon phase emoji helper
+  function moonPhaseEmoji(d) {
+    const lp = 2551443; // lunar period (seconds)
+    const now = DateTime.fromISO(d, {zone: ZONE}).toSeconds();
+    const base = DateTime.fromISO("2001-01-01", {zone: ZONE}).toSeconds(); // reference new moon
+    const phase = ((now - base) % lp) / lp;
+    if (phase < 0.03 || phase > 0.97) return "🌑";
+    if (phase < 0.25) return "🌒";
+    if (phase < 0.27) return "🌓";
+    if (phase < 0.48) return "🌔";
+    if (phase < 0.52) return "🌕";
+    if (phase < 0.75) return "🌖";
+    if (phase < 0.77) return "🌗";
+    return "🌘";
+  }
 
   function diffHours(d, t1, t2){
     if(!t1||!t2) return null;
@@ -661,11 +687,28 @@
     const byDow=Array.from({length:7},()=>[]);
     rows.forEach(r=>{ if(r.status==='off') return; const h=Number(r.hours||0); const d=dowIndex(r.work_date); if(h>0) byDow[d].push(h); });
     const avgByDow=byDow.map(list=> list.length? (list.reduce((a,b)=>a+b,0)/list.length) : null);
+
     for(const r of rows){
-      const tot=Number(r.hours||0)||null; const offH=(r.office_minutes!=null)? Number(r.office_minutes).toFixed(2):''; const rteH=(r.route_minutes!=null)? Number(r.route_minutes).toFixed(2):'';
-      const d=dowIndex(r.work_date); const avg=avgByDow[d]; const cls=classifyRow(tot,avg);
-      const tr=document.createElement('tr'); tr.classList.add('rowLink'); if(cls) tr.classList.add(cls); tr.dataset.date=r.work_date; tr.tabIndex=0;
-      tr.innerHTML = `<td>${r.work_date}</td><td>R1</td><td>${r.status||'worked'}</td>
+      const tot=Number(r.hours||0)||null;
+      const offH=(r.office_minutes!=null)? Number(r.office_minutes).toFixed(2):'';
+      const rteH=(r.route_minutes!=null)? Number(r.route_minutes).toFixed(2):'';
+
+      // NEW: weekday shorthand + moon phase
+      const dObj = DateTime.fromISO(r.work_date, { zone: ZONE });
+      const dowShort = dObj.toFormat('ccc').charAt(0); // M, T, W, T, F, S, S
+      const moon = moonPhaseEmoji(r.work_date);
+
+      const d=dowIndex(r.work_date);
+      const avg=avgByDow[d];
+      const cls=classifyRow(tot,avg);
+
+      const tr=document.createElement('tr');
+      tr.classList.add('rowLink');
+      if(cls) tr.classList.add(cls);
+      tr.dataset.date=r.work_date;
+      tr.tabIndex=0;
+
+      tr.innerHTML = `<td>${r.work_date} (${dowShort}) ${moon}</td><td>R1</td><td>${r.status||'worked'}</td>
         <td class="right">${offH}</td><td class="right">${rteH}</td><td class="right">${tot!=null? tot.toFixed(2):''}</td>
         <td class="right">${r.parcels||0}</td><td class="right">${r.letters||0}</td><td class="right">${r.miles||0}</td>
         <td>${r.weather_json||''}</td>`;
